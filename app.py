@@ -1,7 +1,5 @@
 import uuid
 from datetime import datetime, timezone
-from html import escape
-from urllib.parse import urlparse
 
 import folium
 import pandas as pd
@@ -12,176 +10,61 @@ from streamlit_geolocation import streamlit_geolocation
 from supabase import create_client
 
 
-# ==================================================
+# ================================================
 # PAGE CONFIGURATION
-# ==================================================
+# ================================================
 
 st.set_page_config(
-    page_title="EcoWatch Pune",
+    page_title="EcoWatch",
     page_icon="♻️",
     layout="wide",
-    initial_sidebar_state="collapsed",
 )
 
 TABLE_NAME = "waste_reports"
 BUCKET_NAME = "ecowatch-photos"
 
-PAGES = [
-    "Home",
-    "Report Plastic Waste",
-    "Pune Waste Map",
-    "Admin Dashboard",
-]
 
-
-# ==================================================
-# NAVIGATION STATE
-# IMPORTANT: Synchronize BEFORE creating the radio.
-# ==================================================
-
-if "eco_page" not in st.session_state:
-    st.session_state["eco_page"] = "Home"
-
-if st.session_state["eco_page"] not in PAGES:
-    st.session_state["eco_page"] = "Home"
-
-# Keep the navigation widget synchronized with the
-# destination selected by either homepage button.
-st.session_state["eco_navigation"] = (
-    st.session_state["eco_page"]
-)
-
-
-# ==================================================
-# DESIGN
-# ==================================================
-
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-color: #ffffff;
-    }
-
-    .block-container {
-        max-width: 1200px;
-        padding-top: 1.5rem;
-        padding-bottom: 2rem;
-    }
-
-    [data-testid="stMetric"] {
-        background: #f2f8f3;
-        border: 1px solid #dceade;
-        padding: 16px;
-        border-radius: 12px;
-    }
-
-    .eco-hero {
-        background: linear-gradient(
-            135deg,
-            #e7f6eb 0%,
-            #ffffff 100%
-        );
-        padding: 35px 25px;
-        border: 1px solid #d6eadb;
-        border-radius: 20px;
-        margin-bottom: 22px;
-    }
-
-    .eco-hero h1 {
-        color: #176b3a;
-        font-size: 42px;
-        margin-bottom: 8px;
-    }
-
-    .eco-hero p {
-        color: #40564a;
-        font-size: 16px;
-    }
-
-    .eco-card {
-        border: 1px solid #dce8df;
-        border-radius: 16px;
-        padding: 22px;
-        min-height: 175px;
-        background: #ffffff;
-        margin-bottom: 12px;
-    }
-
-    .eco-card h3 {
-        color: #176b3a;
-    }
-
-    .eco-footer {
-        background: #f2f8f3;
-        padding: 18px;
-        border-radius: 12px;
-        text-align: center;
-        color: #40564a;
-    }
-
-    div.stButton > button[kind="primary"] {
-        background-color: #19733f;
-        border-color: #19733f;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ==================================================
+# ================================================
 # SUPABASE CONNECTION
-# ==================================================
+# ================================================
 
 @st.cache_resource
-def get_supabase_client(url, key):
+def create_supabase_client(url, key):
     return create_client(url, key)
 
 
 def get_supabase():
     try:
-        raw_url = str(
+        url = str(
             st.secrets.get("SUPABASE_URL", "")
         ).strip().rstrip("/")
 
         key = str(
             st.secrets.get(
-                "SUPABASE_SERVICE_ROLE_KEY",
-                "",
+                "SUPABASE_SERVICE_ROLE_KEY", ""
             )
         ).strip()
 
-        if raw_url.endswith("/rest/v1"):
-            raw_url = raw_url[:-8].rstrip("/")
+        if url.endswith("/rest/v1"):
+            url = url[:-8].rstrip("/")
 
-        parsed = urlparse(raw_url)
-
-        if (
-            parsed.scheme != "https"
-            or not parsed.netloc
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-        ):
+        if not url.startswith("https://"):
             st.error(
-                "Invalid SUPABASE_URL. Use your project's "
-                "base HTTPS URL without /rest/v1."
+                "Check SUPABASE_URL in Streamlit Secrets."
             )
             return None
 
         if not key:
             st.error(
-                "SUPABASE_SERVICE_ROLE_KEY is missing "
-                "from Streamlit Secrets."
+                "SUPABASE_SERVICE_ROLE_KEY is missing."
             )
             return None
 
-        return get_supabase_client(raw_url, key)
+        return create_supabase_client(url, key)
 
     except Exception as exc:
         st.error(
-            "Could not configure Supabase: "
+            "Supabase connection configuration failed: "
             + str(exc)
         )
         return None
@@ -190,76 +73,55 @@ def get_supabase():
 supabase = get_supabase()
 
 
-# ==================================================
+# ================================================
 # LOAD REPORTS
-# ==================================================
+# ================================================
 
-def load_reports(show_error=True):
+def load_reports():
     if supabase is None:
         return []
 
     try:
-        response = (
+        result = (
             supabase.table(TABLE_NAME)
             .select("*")
             .order("created_at", desc=True)
             .execute()
         )
 
-        return response.data or []
+        return result.data or []
 
     except Exception as exc:
-        if show_error:
-            st.error(
-                "Could not load reports from the database. "
-                + str(exc)
-            )
-
+        st.error(
+            "Unable to load reports: " + str(exc)
+        )
         return []
 
 
-# ==================================================
-# UPLOAD PHOTO TO PRIVATE STORAGE
-# ==================================================
+# ================================================
+# PHOTO UPLOAD
+# ================================================
 
-def upload_photo(uploaded_file):
+def upload_photo(photo):
     if supabase is None:
         raise RuntimeError(
             "Supabase connection is unavailable."
         )
 
-    allowed_types = {
+    extensions = {
         "image/jpeg": "jpg",
         "image/png": "png",
         "image/webp": "webp",
     }
 
-    mime_type = uploaded_file.type
+    extension = extensions.get(photo.type)
 
-    if mime_type not in allowed_types:
+    if extension is None:
         raise ValueError(
-            "Upload a JPG, PNG, or WEBP image."
+            "Upload a JPG, PNG, or WEBP photograph."
         )
 
-    extension = allowed_types[mime_type]
-
-    if "." in uploaded_file.name:
-        supplied_extension = (
-            uploaded_file.name.rsplit(".", 1)[-1]
-            .lower()
-        )
-
-        if supplied_extension not in {
-            "jpg",
-            "jpeg",
-            "png",
-            "webp",
-        }:
-            raise ValueError(
-                "The uploaded file extension is invalid."
-            )
-
-    object_path = (
+    path = (
         datetime.now(timezone.utc).strftime("%Y/%m/")
         + str(uuid.uuid4())
         + "."
@@ -267,27 +129,27 @@ def upload_photo(uploaded_file):
     )
 
     supabase.storage.from_(BUCKET_NAME).upload(
-        path=object_path,
-        file=uploaded_file.getvalue(),
+        path=path,
+        file=photo.getvalue(),
         file_options={
-            "content-type": mime_type,
+            "content-type": photo.type,
             "upsert": "false",
         },
     )
 
-    return object_path
+    return path
 
 
-# ==================================================
-# SAVE A REPORT
-# ==================================================
+# ================================================
+# SAVE REPORT
+# ================================================
 
 def save_report(
     latitude,
     longitude,
     category,
     description,
-    uploaded_photo,
+    photo,
 ):
     if supabase is None:
         raise RuntimeError(
@@ -301,11 +163,9 @@ def save_report(
         -90 <= latitude <= 90
         and -180 <= longitude <= 180
     ):
-        raise ValueError(
-            "The GPS coordinates are invalid."
-        )
+        raise ValueError("Invalid GPS coordinates.")
 
-    photo_path = upload_photo(uploaded_photo)
+    photo_path = upload_photo(photo)
 
     report = {
         "latitude": latitude,
@@ -335,166 +195,83 @@ def save_report(
         raise
 
 
-# ==================================================
-# GENERATE A TEMPORARY PRIVATE PHOTO URL
-# ==================================================
+# ================================================
+# DASHBOARD
+# ================================================
 
-def get_photo_url(photo_path):
-    if not photo_path or supabase is None:
-        return None
+def show_dashboard():
+    st.title("EcoWatch")
+    st.subheader("Plastic Waste Monitoring System")
 
-    try:
-        response = (
-            supabase.storage.from_(BUCKET_NAME)
-            .create_signed_url(photo_path, 300)
-        )
-
-        if isinstance(response, dict):
-            return (
-                response.get("signedURL")
-                or response.get("signedUrl")
-            )
-
-        return None
-
-    except Exception:
-        return None
-
-
-# ==================================================
-# HOMEPAGE
-# ==================================================
-
-def show_home():
-    st.markdown(
-        """
-        <div class="eco-hero">
-            <div style="font-size:45px;">♻️</div>
-            <h1>EcoWatch Pune</h1>
-            <p>
-                <b>Smart Plastic Waste Reporting and Monitoring</b>
-            </p>
-            <p>
-                Report plastic pollution, explore GPS-mapped
-                reports, and support cleaner public spaces.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.write(
+        "Welcome to EcoWatch. Report plastic waste "
+        "and explore submitted reports using GPS "
+        "coordinates."
     )
-
-    left, right = st.columns(2)
-
-    with left:
-        st.markdown(
-            """
-            <div class="eco-card">
-                <div style="font-size:34px;">📸</div>
-                <h3>Report Plastic Waste</h3>
-                <p>
-                    Upload a photograph and record the GPS
-                    coordinates of plastic waste.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if st.button(
-            "Report Plastic Waste →",
-            key="home_report_button",
-            type="primary",
-            use_container_width=True,
-        ):
-            st.session_state["eco_page"] = (
-                "Report Plastic Waste"
-            )
-            st.rerun()
-
-    with right:
-        st.markdown(
-            """
-            <div class="eco-card">
-                <div style="font-size:34px;">🗺️</div>
-                <h3>Explore Pune Waste Map</h3>
-                <p>
-                    Explore reports using their saved GPS
-                    coordinates and current report status.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if st.button(
-            "Explore Pune Waste Map →",
-            key="home_map_button",
-            use_container_width=True,
-        ):
-            st.session_state["eco_page"] = (
-                "Pune Waste Map"
-            )
-            st.rerun()
-
-    st.divider()
 
     reports = load_reports()
 
     total = len(reports)
 
     pending = sum(
-        1
-        for row in reports
+        1 for row in reports
         if (row.get("status") or "Pending") == "Pending"
     )
 
+    in_progress = sum(
+        1 for row in reports
+        if row.get("status") == "In Progress"
+    )
+
     resolved = sum(
-        1
-        for row in reports
+        1 for row in reports
         if row.get("status") == "Resolved"
     )
 
-    st.subheader("EcoWatch at a glance")
-
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
 
     col1.metric("Total Reports", total)
     col2.metric("Pending Reports", pending)
-    col3.metric("Resolved Reports", resolved)
+    col3.metric("In Progress", in_progress)
+    col4.metric("Resolved Reports", resolved)
 
-    st.write("")
+    st.divider()
 
-    st.markdown(
+    st.subheader("About EcoWatch")
+
+    st.write(
         """
-        <div class="eco-footer">
-            <b>Our mission</b><br>
-            Using technology and community participation
-            to support cleaner public places.
-        </div>
-        """,
-        unsafe_allow_html=True,
+        EcoWatch is a community-oriented plastic waste
+        reporting and monitoring project.
+
+        The system allows users to:
+        - Submit photographs of plastic waste.
+        - Record the actual GPS coordinates.
+        - View submitted reports on a map.
+        - Track report status through the admin dashboard.
+        """
     )
 
 
-# ==================================================
+# ================================================
 # REPORT PLASTIC WASTE
-# ==================================================
+# ================================================
 
 def show_report_form():
-    st.title("📸 Report Plastic Waste")
+    st.title("Report Plastic Waste")
 
     st.write(
-        "Allow location access to record the actual "
-        "GPS coordinates of the report."
+        "Allow location access to record your "
+        "current GPS coordinates."
     )
 
     try:
         location = streamlit_geolocation()
     except Exception as exc:
         location = None
-        st.warning(
-            "The GPS component could not start: "
-            + str(exc)
+        st.error(
+            "GPS component could not start: " + str(exc)
         )
 
     latitude = None
@@ -512,65 +289,51 @@ def show_report_form():
     longitude = st.session_state.get("eco_longitude")
 
     if latitude is not None and longitude is not None:
-        st.success("GPS coordinates received.")
+        st.success("GPS location received.")
 
-        st.code(
-            "Latitude: {}\nLongitude: {}".format(
-                latitude,
-                longitude,
-            )
-        )
+        st.write("Latitude:", latitude)
+        st.write("Longitude:", longitude)
     else:
         st.warning(
-            "GPS coordinates are not available yet. "
-            "Allow location access in your browser and "
-            "wait for the coordinates to appear."
+            "GPS location is not available yet. "
+            "Allow location permission and try again."
         )
 
-    with st.form(
-        "eco_report_form",
-        clear_on_submit=False,
-    ):
+    with st.form("report_form"):
         category = st.selectbox(
-            "Plastic waste category",
+            "Plastic Waste Category",
             [
-                "Plastic bottles",
-                "Plastic bags",
-                "Food packaging",
-                "Mixed plastic waste",
-                "Other plastic waste",
+                "Plastic Bottles",
+                "Plastic Bags",
+                "Food Packaging",
+                "Mixed Plastic Waste",
+                "Other Plastic Waste",
             ],
         )
 
         description = st.text_area(
             "Description",
-            max_chars=1000,
-            placeholder=(
-                "Describe the waste and any useful "
-                "details about the public place."
-            ),
+            placeholder="Describe the plastic waste...",
         )
 
-        uploaded_photo = st.file_uploader(
-            "Upload a photograph",
+        photo = st.file_uploader(
+            "Upload Photograph",
             type=["jpg", "jpeg", "png", "webp"],
         )
 
         consent = st.checkbox(
-            "I confirm this report is genuine and "
-            "the photograph is appropriate to share."
+            "I confirm that this report is genuine."
         )
 
         submitted = st.form_submit_button(
             "Submit Report",
             type="primary",
-            use_container_width=True,
         )
 
-    if uploaded_photo is not None:
+    if photo is not None:
         st.image(
-            uploaded_photo,
-            caption="Photo preview",
+            photo,
+            caption="Photograph Preview",
             use_container_width=True,
         )
 
@@ -580,11 +343,10 @@ def show_report_form():
 
         if latitude is None or longitude is None:
             st.error(
-                "GPS is required. Allow location access "
-                "and try submitting again."
+                "GPS coordinates are required."
             )
 
-        elif uploaded_photo is None:
+        elif photo is None:
             st.error(
                 "Please upload a photograph."
             )
@@ -606,7 +368,7 @@ def show_report_form():
                     longitude,
                     category,
                     description,
-                    uploaded_photo,
+                    photo,
                 )
 
                 st.success(
@@ -614,72 +376,65 @@ def show_report_form():
                 )
 
                 st.session_state.pop(
-                    "eco_latitude",
-                    None,
+                    "eco_latitude", None
                 )
                 st.session_state.pop(
-                    "eco_longitude",
-                    None,
+                    "eco_longitude", None
                 )
-
-                st.session_state["eco_report_submitted"] = True
 
             except Exception as exc:
                 st.error(
-                    "Could not save the report. Check the "
-                    "Supabase connection, database, and "
-                    "private photo bucket. Details: "
+                    "Report could not be saved: "
                     + str(exc)
                 )
 
 
-# ==================================================
+# ================================================
 # PUNE WASTE MAP
-# ==================================================
+# ================================================
 
-def show_map():
-    st.title("🗺️ Pune Waste Map")
+def show_waste_map():
+    st.title("Pune Waste Map")
 
     st.write(
-        "Markers represent saved report GPS coordinates. "
-        "The map is centered on the available reports."
+        "Reports are plotted using the GPS coordinates "
+        "saved in the database."
     )
 
     reports = load_reports()
-
-    valid_rows = []
+    valid_reports = []
 
     for row in reports:
         try:
-            lat = float(row["latitude"])
-            lon = float(row["longitude"])
+            latitude = float(row["latitude"])
+            longitude = float(row["longitude"])
 
             if (
-                -90 <= lat <= 90
-                and -180 <= lon <= 180
+                -90 <= latitude <= 90
+                and -180 <= longitude <= 180
             ):
                 item = dict(row)
-                item["latitude"] = lat
-                item["longitude"] = lon
-                valid_rows.append(item)
+                item["latitude"] = latitude
+                item["longitude"] = longitude
+                valid_reports.append(item)
 
-        except (TypeError, ValueError, KeyError):
+        except (KeyError, TypeError, ValueError):
             continue
 
-    if not valid_rows:
+    if not valid_reports:
         st.info(
             "No GPS-tagged reports are available yet. "
-            "Submit a report first to see a marker."
+            "Submit a report to see a map marker."
         )
         return
 
     center_lat = sum(
-        row["latitude"] for row in valid_rows
-    ) / len(valid_rows)
+        row["latitude"] for row in valid_reports
+    ) / len(valid_reports)
 
     center_lon = sum(
-        row["longitude"] for row in valid_rows
-    ) / len(valid_rows)
+        row["longitude"] for row in valid_reports
+    ) / len(valid_reports)
 
     map_object = folium.Map(
         location=[center_lat, center_lon],
@@ -687,52 +442,38 @@ def show_map():
         control_scale=True,
     )
 
-    Fullscreen(
-        position="topright"
-    ).add_to(map_object)
+    Fullscreen(position="topright").add_to(map_object)
 
-    marker_colors = {
+    colors = {
         "Pending": "red",
         "In Progress": "blue",
         "Resolved": "green",
     }
 
-    for row in valid_rows:
+    for row in valid_reports:
+        category = str(
+            row.get("waste_category") or "Plastic Waste"
+        )
+
+        description = str(
+            row.get("description") or "No description"
+        )
+
         status = str(
             row.get("status") or "Pending"
         )
 
-        category = escape(
-            str(
-                row.get("waste_category")
-                or "Plastic waste"
-            )
-        )
-
-        description = escape(
-            str(
-                row.get("description")
-                or "No description"
-            )
-        )
-
-        created_at = escape(
-            str(
-                row.get("created_at")
-                or "Date unavailable"
-            )
-        )
-
-        popup_html = (
-            "<b>{}</b><br>"
-            "Status: {}<br>"
-            "{}<br>"
-            "<small>{}</small>"
-        ).format(
-            category,
-            escape(status),
-            description,
-            created_at,
+        popup = folium.Popup(
+            (
+                "<b>{}</b><br>"
+                "Status: {}<br>"
+                "{}"
+            ).format(
+                category,
+                status,
+                description,
+            ),
+            max_width=300,
         )
 
         folium.Marker(
@@ -740,20 +481,17 @@ def show_map():
                 row["latitude"],
                 row["longitude"],
             ],
-            popup=folium.Popup(
-                popup_html,
-                max_width=300,
-            ),
+            popup=popup,
             tooltip=category,
             icon=folium.Icon(
-                color=marker_colors.get(status, "red"),
+                color=colors.get(status, "red"),
                 icon="info-sign",
             ),
         ).add_to(map_object)
 
     st_folium(
         map_object,
-        height=560,
+        height=550,
         use_container_width=True,
         returned_objects=[],
     )
@@ -763,40 +501,39 @@ def show_map():
     )
 
 
-# ==================================================
+# ================================================
 # ADMIN DASHBOARD
-# ==================================================
+# ================================================
 
 def show_admin():
-    st.title("🔐 Admin Dashboard")
+    st.title("Admin Dashboard")
 
-    admin_password = str(
+    password = str(
         st.secrets.get("ADMIN_PASSWORD", "")
     )
 
-    if not admin_password:
+    if not password:
         st.error(
             "ADMIN_PASSWORD is missing from Streamlit Secrets."
         )
         return
 
     if not st.session_state.get(
-        "eco_admin_authenticated",
-        False,
+        "eco_admin_authenticated", False
     ):
-        with st.form("eco_admin_login_form"):
+        with st.form("admin_login"):
             entered_password = st.text_input(
-                "Admin password",
+                "Admin Password",
                 type="password",
             )
 
-            login_clicked = st.form_submit_button(
-                "Log in",
+            login = st.form_submit_button(
+                "Login",
                 type="primary",
             )
 
-        if login_clicked:
-            if entered_password == admin_password:
+        if login:
+            if entered_password == password:
                 st.session_state[
                     "eco_admin_authenticated"
                 ] = True
@@ -806,7 +543,7 @@ def show_admin():
 
         return
 
-    if st.button("Log out", key="eco_admin_logout"):
+    if st.button("Logout"):
         st.session_state[
             "eco_admin_authenticated"
         ] = False
@@ -815,214 +552,141 @@ def show_admin():
     reports = load_reports()
 
     if not reports:
-        st.info("No reports are available yet.")
+        st.info("No reports are available.")
         return
 
     df = pd.DataFrame(reports)
 
-    total = len(df)
+    st.subheader("Submitted Reports")
 
-    if "status" in df.columns:
-        pending = int(
-            (df["status"] == "Pending").sum()
-        )
-        resolved = int(
-            (df["status"] == "Resolved").sum()
-        )
-    else:
-        pending = 0
-        resolved = 0
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Total Reports", total)
-    col2.metric("Pending", pending)
-    col3.metric("Resolved", resolved)
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+    )
 
     st.divider()
-    st.subheader("Update report status")
+    st.subheader("Update Report Status")
 
-    report_options = []
+    options = []
 
     for row in reports:
         report_id = str(row.get("id", ""))
 
-        label = "{} | {} | {}".format(
+        label = "{} | {}".format(
             row.get("waste_category", "Waste"),
             row.get("status", "Pending"),
-            str(row.get("created_at", ""))[:16],
         )
 
-        report_options.append((report_id, label))
+        options.append((report_id, label))
 
-    if report_options:
-        selected_id = st.selectbox(
-            "Select report",
-            [item[0] for item in report_options],
-            format_func=lambda value: next(
-                (
-                    label
-                    for key, label in report_options
-                    if key == value
-                ),
-                value,
-            ),
-        )
-
-        selected_report = next(
+    selected_id = st.selectbox(
+        "Select Report",
+        [item[0] for item in options],
+        format_func=lambda value: next(
             (
-                row
-                for row in reports
-                if str(row.get("id", "")) == selected_id
+                label for key, label in options
+                if key == value
             ),
-            {},
-        )
+            value,
+        ),
+    )
 
-        statuses = [
-            "Pending",
-            "In Progress",
-            "Resolved",
-        ]
+    selected_row = next(
+        (
+            row for row in reports
+            if str(row.get("id", "")) == selected_id
+        ),
+        {},
+    )
 
-        current_status = str(
-            selected_report.get("status") or "Pending"
-        )
+    statuses = [
+        "Pending",
+        "In Progress",
+        "Resolved",
+    ]
 
-        if current_status not in statuses:
-            current_status = "Pending"
+    current_status = str(
+        selected_row.get("status") or "Pending"
+    )
 
-        chosen_status = st.selectbox(
-            "New status",
-            statuses,
-            index=statuses.index(current_status),
-        )
+    if current_status not in statuses:
+        current_status = "Pending"
 
-        if st.button(
-            "Save status",
-            type="primary",
-            key="eco_save_status",
-        ):
-            try:
-                (
-                    supabase.table(TABLE_NAME)
-                    .update({"status": chosen_status})
-                    .eq("id", selected_id)
-                    .execute()
-                )
+    new_status = st.selectbox(
+        "New Status",
+        statuses,
+        index=statuses.index(current_status),
+    )
 
-                st.success("Report status updated.")
-                st.rerun()
+    if st.button("Save Status", type="primary"):
+        try:
+            (
+                supabase.table(TABLE_NAME)
+                .update({"status": new_status})
+                .eq("id", selected_id)
+                .execute()
+            )
 
-            except Exception as exc:
-                st.error(
-                    "Could not update the report: "
-                    + str(exc)
-                )
+            st.success("Status updated successfully.")
+            st.rerun()
 
-        photo_path = selected_report.get("photo_path")
-
-        if photo_path:
-            signed_url = get_photo_url(photo_path)
-
-            if signed_url:
-                st.image(
-                    signed_url,
-                    caption="Selected report photograph",
-                    use_container_width=True,
-                )
-            else:
-                st.caption(
-                    "Photo preview is currently unavailable."
-                )
+        except Exception as exc:
+            st.error(
+                "Could not update status: " + str(exc)
+            )
 
     st.divider()
-    st.subheader("All reports")
-
-    preferred_columns = [
-        "id",
-        "created_at",
-        "waste_category",
-        "description",
-        "latitude",
-        "longitude",
-        "area_name",
-        "status",
-        "photo_path",
-    ]
-
-    visible_columns = [
-        column
-        for column in preferred_columns
-        if column in df.columns
-    ]
-
-    st.dataframe(
-        df[visible_columns],
-        use_container_width=True,
-        hide_index=True,
-    )
 
     csv_data = df.to_csv(
         index=False
     ).encode("utf-8")
 
     st.download_button(
-        "Download CSV",
+        "Download Reports CSV",
         data=csv_data,
         file_name="ecowatch_reports.csv",
         mime="text/csv",
-        key="eco_download_csv",
     )
 
 
-# ==================================================
-# NAVIGATION MENU
-# ==================================================
+# ================================================
+# BASIC SIDEBAR NAVIGATION
+# ================================================
 
-selected_page = st.radio(
-    "Navigate EcoWatch",
-    PAGES,
-    horizontal=True,
-    key="eco_navigation",
-    label_visibility="collapsed",
+st.sidebar.title("EcoWatch")
+st.sidebar.caption("Plastic Waste Monitoring")
+
+page = st.sidebar.radio(
+    "Navigation",
+    [
+        "Dashboard",
+        "Report Plastic Waste",
+        "Pune Waste Map",
+        "Admin Dashboard",
+    ],
+    key="basic_navigation",
 )
 
-# The navigation menu can also change the page.
-st.session_state["eco_page"] = selected_page
+st.sidebar.divider()
 
-st.divider()
+st.sidebar.caption(
+    "Plastic Free Public Places"
+)
 
 
-# ==================================================
-# DISPLAY SELECTED PAGE
-# ==================================================
+# ================================================
+# PAGE ROUTING
+# ================================================
 
-if selected_page == "Home":
-    show_home()
+if page == "Dashboard":
+    show_dashboard()
 
-elif selected_page == "Report Plastic Waste":
+elif page == "Report Plastic Waste":
     show_report_form()
 
-elif selected_page == "Pune Waste Map":
-    show_map()
+elif page == "Pune Waste Map":
+    show_waste_map()
 
-elif selected_page == "Admin Dashboard":
+elif page == "Admin Dashboard":
     show_admin()
-
-
-# ==================================================
-# FOOTER
-# ==================================================
-
-st.write("")
-
-st.markdown(
-    """
-    <div class="eco-footer">
-        <b>EcoWatch Pune</b><br>
-        Plastic Waste Reporting and Monitoring<br>
-        Community awareness through technology
-    </div>
-    """,
-    unsafe_allow_html=True,
-        )
