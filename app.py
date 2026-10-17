@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 from supabase import create_client
 from streamlit_folium import st_folium
+from streamlit_geolocation import streamlit_geolocation
 
 
 # =========================================================
@@ -21,6 +22,7 @@ st.set_page_config(
 
 st.title("♻️ EcoWatch")
 st.subheader("Plastic Free Public Places")
+
 st.write(
     "Report plastic waste, view reported locations, "
     "and help make Pune cleaner."
@@ -38,7 +40,6 @@ try:
         .rstrip("/")
     )
 
-    # Normalize an accidentally included REST API suffix.
     if supabase_url.endswith("/rest/v1"):
         supabase_url = supabase_url[:-len("/rest/v1")]
 
@@ -52,16 +53,12 @@ try:
         or parsed_url.fragment
     ):
         st.error(
-            "Invalid SUPABASE_URL. Use the project URL "
+            "Invalid SUPABASE_URL. Use your project URL "
             "ending in .supabase.co without /rest/v1."
         )
         st.stop()
 
     supabase_key = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
-
-    if not supabase_key:
-        st.error("The Supabase key is missing.")
-        st.stop()
 
     supabase = create_client(
         supabase_url,
@@ -69,9 +66,7 @@ try:
     )
 
 except Exception as e:
-    st.error(
-        "EcoWatch could not initialize its database connection."
-    )
+    st.error("EcoWatch database connection failed.")
     st.code(f"{type(e).__name__}: {e}")
     st.stop()
 
@@ -94,22 +89,83 @@ page = st.radio(
 
 
 # =========================================================
-# 4. PUBLIC REPORTING FORM
+# 4. PUBLIC REPORTING FORM WITH GPS
 # =========================================================
 
 if page == "Report Plastic Waste":
 
     st.header("📸 Report Plastic Waste")
 
-    st.info(
-        "Help keep public places clean. Upload a photograph "
-        "and enter the location of the plastic waste."
+    st.write(
+        "Help keep public places clean by reporting "
+        "plastic waste in your area."
     )
+
+    # -----------------------------------------------------
+    # GPS LOCATION COMPONENT
+    # -----------------------------------------------------
+
+    st.subheader("📍 Detect Your Current Location")
+
+    st.caption(
+        "Tap the location button below and allow your "
+        "browser to access your location."
+    )
+
+    try:
+        location = streamlit_geolocation()
+
+        if location and location.get("latitude") is not None:
+            latitude_value = location.get("latitude")
+            longitude_value = location.get("longitude")
+
+            if longitude_value is not None:
+                latitude_value = float(latitude_value)
+                longitude_value = float(longitude_value)
+
+                if (
+                    -90 <= latitude_value <= 90
+                    and -180 <= longitude_value <= 180
+                ):
+                    # Update coordinates before the input widgets
+                    # are created during this rerun.
+                    st.session_state["latitude_input"] = (
+                        latitude_value
+                    )
+
+                    st.session_state["longitude_input"] = (
+                        longitude_value
+                    )
+
+                    st.success(
+                        "Current location detected successfully!"
+                    )
+
+                    st.write(
+                        f"Latitude: {latitude_value:.6f}"
+                    )
+
+                    st.write(
+                        f"Longitude: {longitude_value:.6f}"
+                    )
+
+    except Exception as e:
+        st.warning(
+            "Automatic location detection is unavailable. "
+            "You can still enter coordinates manually."
+        )
+        st.caption(f"Location component error: {type(e).__name__}")
+
+    st.divider()
+
+    # -----------------------------------------------------
+    # REPORT FORM
+    # -----------------------------------------------------
 
     with st.form("report_form"):
 
         photo = st.file_uploader(
-            "Photograph of plastic waste",
+            "Upload a photograph of plastic waste",
             type=["jpg", "jpeg", "png"]
         )
 
@@ -133,20 +189,15 @@ if page == "Report Plastic Waste":
             "Describe the plastic waste"
         )
 
-        st.subheader("📍 Waste Location")
-
-        st.caption(
-            "Enter the coordinates of the waste location. "
-            "The default coordinates point to Pune city. "
-            "These defaults do not represent your exact location."
-        )
+        st.subheader("📍 Waste Coordinates")
 
         latitude = st.number_input(
             "Latitude",
             min_value=-90.0,
             max_value=90.0,
             value=18.5204,
-            format="%.6f"
+            format="%.6f",
+            key="latitude_input"
         )
 
         longitude = st.number_input(
@@ -154,13 +205,18 @@ if page == "Report Plastic Waste":
             min_value=-180.0,
             max_value=180.0,
             value=73.8567,
-            format="%.6f"
+            format="%.6f",
+            key="longitude_input"
         )
 
         submitted = st.form_submit_button(
             "📤 Submit Plastic Waste Report",
             use_container_width=True
         )
+
+    # -----------------------------------------------------
+    # SUBMIT REPORT
+    # -----------------------------------------------------
 
     if submitted:
 
@@ -172,17 +228,16 @@ if page == "Report Plastic Waste":
 
         else:
 
+            report_id = str(uuid.uuid4())
+
+            extension = photo.name.rsplit(
+                ".", 1
+            )[-1].lower()
+
+            photo_path = f"{report_id}.{extension}"
+
             try:
-                report_id = str(uuid.uuid4())
-
-                extension = (
-                    photo.name.rsplit(".", 1)[-1].lower()
-                )
-
-                photo_path = f"{report_id}.{extension}"
-
-                # Upload the photograph to the existing
-                # private Supabase Storage bucket.
+                # Upload photograph.
                 supabase.storage.from_(
                     "ecowatch-photos"
                 ).upload(
@@ -207,7 +262,7 @@ if page == "Report Plastic Waste":
                     ).isoformat()
                 }
 
-                # Save the report in the existing database table.
+                # Save report.
                 supabase.table(
                     "waste_reports"
                 ).insert(
@@ -215,20 +270,20 @@ if page == "Report Plastic Waste":
                 ).execute()
 
                 st.success(
-                    "Your plastic waste report was submitted successfully!"
+                    "Your plastic waste report was submitted!"
                 )
 
                 st.write("Report ID:", report_id)
 
                 st.info(
-                    "Your report is marked Pending until "
-                    "an administrator reviews it."
+                    "Your report is awaiting administrator review."
                 )
 
             except Exception as e:
                 st.error(
                     "The report could not be submitted."
                 )
+
                 st.code(
                     f"{type(e).__name__}: {e}"
                 )
@@ -340,20 +395,17 @@ elif page == "Pune Waste Map":
 
         if not reports:
             st.info(
-                "No reports have been submitted yet. "
-                "The map is centered on Pune."
+                "No plastic waste reports have been submitted yet."
             )
 
         elif valid_reports == 0:
             st.warning(
-                "Reports were retrieved, but none had "
-                "valid coordinates for map markers."
+                "No valid report coordinates were found."
             )
 
     except Exception as e:
-        st.error(
-            "The map or database request failed."
-        )
+        st.error("The map or database request failed.")
+
         st.code(
             f"{type(e).__name__}: {e}"
         )
@@ -387,11 +439,9 @@ elif page == "Admin Dashboard":
             if correct_password and password == correct_password:
                 st.session_state.admin_ok = True
                 st.rerun()
+
             else:
-                st.error(
-                    "Incorrect password or admin password "
-                    "not configured."
-                )
+                st.error("Incorrect password.")
 
     if st.session_state.get("admin_ok", False):
 
@@ -456,9 +506,7 @@ elif page == "Admin Dashboard":
                         .execute()
                     )
 
-                    st.success(
-                        "Report status updated successfully."
-                    )
+                    st.success("Report status updated.")
 
                     st.rerun()
 
@@ -472,14 +520,13 @@ elif page == "Admin Dashboard":
                 )
 
             else:
-                st.info(
-                    "No reports have been submitted yet."
-                )
+                st.info("No reports have been submitted yet.")
 
         except Exception as e:
             st.error(
                 "The administrator could not retrieve reports."
             )
+
             st.code(
                 f"{type(e).__name__}: {e}"
             )
