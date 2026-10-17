@@ -811,5 +811,115 @@ elif selected_page == "Admin Dashboard":
 
         if st.button("Lock Admin Dashboard"):
 
-            st.session_state[
+                    if st.button("Lock Admin Dashboard"):
+            st.session_state["eco_admin_authenticated"] = False
+            st.rerun()
+
+        st.divider()
+
+        try:
+            reports = get_reports()
+
+            if not reports:
+                st.info("No reports have been submitted yet.")
+
+            else:
+                df = pd.DataFrame(reports)
+
+                # Calculate report statistics
+                pending_count = 0
+                resolved_count = 0
+
+                if "status" in df.columns:
+                    statuses = (
+                        df["status"]
+                        .fillna("Pending")
+                        .astype(str)
+                        .str.lower()
+                    )
+
+                    pending_count = int(
+                        (statuses == "pending").sum()
+                    )
+
+                    resolved_count = int(
+                        (statuses == "resolved").sum()
+                    )
+
+                col1, col2, col3 = st.columns(3)
+
+                col1.metric("Total Reports", len(df))
+                col2.metric("Pending", pending_count)
+                col3.metric("Resolved", resolved_count)
+
+                st.subheader("Submitted Reports")
+
+                display_columns = [
+                    column
+                    for column in [
+                        "id",
+                        "created_at",
+                        "waste_category",
+                        "description",
+                        "latitude",
+                        "longitude",
+                        "status",
+                    ]
+                    if column in df.columns
+                ]
+
+                st.dataframe(
+                    df[display_columns],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                st.subheader("Update Report Status")
+
+                report_ids = [
+                    str(report["id"])
+                    for report in reports
+                    if report.get("id") is not None
+                ]
+
+                if report_ids:
+                    selected_id = st.selectbox(
+                        "Select report ID",
+                        report_ids,
+                    )
+
+                    new_status = st.selectbox(
+                        "New status",
+                        ["Pending", "In Progress", "Resolved"],
+                    )
+
+                    if st.button("Save Status", type="primary"):
+                        (
+                            supabase
+                            .table("waste_reports")
+                            .update({"status": new_status})
+                            .eq("id", selected_id)
+                            .execute()
+                        )
+
+                        st.success("Report status updated.")
+                        st.rerun()
+
+                st.subheader("Export Reports")
+
+                csv_data = df.to_csv(
+                    index=False
+                ).encode("utf-8-sig")
+
+                st.download_button(
+                    "Download CSV",
+                    data=csv_data,
+                    file_name="ecowatch_reports.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
+        except Exception as error:
+            st.error("Could not load the admin dashboard.")
+            st.error(str(error))
   
