@@ -4,6 +4,7 @@ import folium
 import uuid
 
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from supabase import create_client
 from streamlit_folium import st_folium
 
@@ -31,12 +32,36 @@ st.write(
 # =========================================================
 
 try:
-    supabase_url = st.secrets["SUPABASE_URL"].strip().rstrip("/")
-    supabase_key = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+    supabase_url = (
+        st.secrets["SUPABASE_URL"]
+        .strip()
+        .rstrip("/")
+    )
 
-    # Accept either the project URL or a URL with /rest/v1.
+    # Normalize an accidentally included REST API suffix.
     if supabase_url.endswith("/rest/v1"):
         supabase_url = supabase_url[:-len("/rest/v1")]
+
+    parsed_url = urlparse(supabase_url)
+
+    if (
+        parsed_url.scheme != "https"
+        or not parsed_url.netloc
+        or parsed_url.path
+        or parsed_url.query
+        or parsed_url.fragment
+    ):
+        st.error(
+            "Invalid SUPABASE_URL. Use the project URL "
+            "ending in .supabase.co without /rest/v1."
+        )
+        st.stop()
+
+    supabase_key = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+
+    if not supabase_key:
+        st.error("The Supabase key is missing.")
+        st.stop()
 
     supabase = create_client(
         supabase_url,
@@ -44,22 +69,27 @@ try:
     )
 
 except Exception as e:
-    st.error("EcoWatch could not initialize its database connection.")
+    st.error(
+        "EcoWatch could not initialize its database connection."
+    )
     st.code(f"{type(e).__name__}: {e}")
     st.stop()
 
 
 # =========================================================
-# 3. NAVIGATION
+# 3. VISIBLE NAVIGATION
 # =========================================================
 
-page = st.sidebar.radio(
-    "Navigation",
+page = st.radio(
+    "Choose an option",
     [
         "Report Plastic Waste",
         "Pune Waste Map",
         "Admin Dashboard"
-    ]
+    ],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_navigation"
 )
 
 
@@ -72,8 +102,8 @@ if page == "Report Plastic Waste":
     st.header("📸 Report Plastic Waste")
 
     st.info(
-        "Upload a photograph and provide the location "
-        "of the plastic waste."
+        "Help keep public places clean. Upload a photograph "
+        "and enter the location of the plastic waste."
     )
 
     with st.form("report_form"):
@@ -103,11 +133,12 @@ if page == "Report Plastic Waste":
             "Describe the plastic waste"
         )
 
-        st.subheader("📍 Location")
+        st.subheader("📍 Waste Location")
 
         st.caption(
             "Enter the coordinates of the waste location. "
-            "The default coordinates point to Pune city."
+            "The default coordinates point to Pune city. "
+            "These defaults do not represent your exact location."
         )
 
         latitude = st.number_input(
@@ -127,7 +158,8 @@ if page == "Report Plastic Waste":
         )
 
         submitted = st.form_submit_button(
-            "Submit Plastic Waste Report"
+            "📤 Submit Plastic Waste Report",
+            use_container_width=True
         )
 
     if submitted:
@@ -143,13 +175,14 @@ if page == "Report Plastic Waste":
             try:
                 report_id = str(uuid.uuid4())
 
-                extension = photo.name.rsplit(
-                    ".", 1
-                )[-1].lower()
+                extension = (
+                    photo.name.rsplit(".", 1)[-1].lower()
+                )
 
                 photo_path = f"{report_id}.{extension}"
 
-                # Upload the photograph to the private bucket.
+                # Upload the photograph to the existing
+                # private Supabase Storage bucket.
                 supabase.storage.from_(
                     "ecowatch-photos"
                 ).upload(
@@ -174,7 +207,7 @@ if page == "Report Plastic Waste":
                     ).isoformat()
                 }
 
-                # Save report details in Supabase.
+                # Save the report in the existing database table.
                 supabase.table(
                     "waste_reports"
                 ).insert(
@@ -182,14 +215,14 @@ if page == "Report Plastic Waste":
                 ).execute()
 
                 st.success(
-                    "Your plastic waste report was submitted!"
+                    "Your plastic waste report was submitted successfully!"
                 )
 
                 st.write("Report ID:", report_id)
 
                 st.info(
-                    "Your report is marked Pending "
-                    "until an administrator reviews it."
+                    "Your report is marked Pending until "
+                    "an administrator reviews it."
                 )
 
             except Exception as e:
@@ -210,8 +243,6 @@ elif page == "Pune Waste Map":
     st.header("🗺️ Pune Plastic Waste Map")
 
     try:
-
-        # Retrieve report records.
         result = (
             supabase.table("waste_reports")
             .select(
@@ -223,14 +254,12 @@ elif page == "Pune Waste Map":
 
         reports = result.data or []
 
-        # Start the map at Pune.
         map_view = folium.Map(
             location=[18.5204, 73.8567],
             zoom_start=12,
             control_scale=True
         )
 
-        # Add a marker for each valid report.
         valid_reports = 0
 
         for report in reports:
@@ -249,7 +278,7 @@ elif page == "Pune Waste Map":
                     report.get("area_name") or "Unknown area"
                 )
 
-                waste_category = (
+                category = (
                     report.get("waste_category") or "Unknown"
                 )
 
@@ -259,17 +288,16 @@ elif page == "Pune Waste Map":
 
                 popup_html = (
                     f"<b>Area:</b> {area_name}<br>"
-                    f"<b>Category:</b> {waste_category}<br>"
+                    f"<b>Category:</b> {category}<br>"
                     f"<b>Status:</b> {status}"
                 )
 
-                marker_color = (
-                    "red"
-                    if status == "Pending"
-                    else "green"
-                    if status == "Resolved"
-                    else "blue"
-                )
+                if status == "Pending":
+                    marker_color = "red"
+                elif status == "Resolved":
+                    marker_color = "green"
+                else:
+                    marker_color = "blue"
 
                 folium.Marker(
                     location=[lat, lon],
@@ -287,10 +315,8 @@ elif page == "Pune Waste Map":
                 valid_reports += 1
 
             except (KeyError, TypeError, ValueError):
-                # Skip records with invalid coordinates.
                 continue
 
-        # Display the map.
         st_folium(
             map_view,
             width=None,
@@ -298,41 +324,38 @@ elif page == "Pune Waste Map":
             key="ecowatch_pune_map"
         )
 
-        st.metric(
-            "Total reports retrieved",
-            len(reports)
-        )
+        col1, col2 = st.columns(2)
 
-        st.metric(
-            "Locations displayed on map",
-            valid_reports
-        )
+        with col1:
+            st.metric(
+                "Total reports retrieved",
+                len(reports)
+            )
+
+        with col2:
+            st.metric(
+                "Locations displayed",
+                valid_reports
+            )
 
         if not reports:
             st.info(
-                "No plastic waste reports have been submitted yet. "
+                "No reports have been submitted yet. "
                 "The map is centered on Pune."
             )
 
         elif valid_reports == 0:
             st.warning(
-                "Reports were retrieved, but none contained "
+                "Reports were retrieved, but none had "
                 "valid coordinates for map markers."
             )
 
     except Exception as e:
-
         st.error(
             "The map or database request failed."
         )
-
         st.code(
             f"{type(e).__name__}: {e}"
-        )
-
-        st.caption(
-            "Do not share your database credentials. "
-            "Use this error message to diagnose the problem."
         )
 
 
@@ -353,22 +376,21 @@ elif page == "Admin Dashboard":
                 type="password"
             )
 
-            login = st.form_submit_button(
-                "Login"
-            )
+            login = st.form_submit_button("Login")
 
         if login:
 
-            if password == st.secrets.get(
+            correct_password = st.secrets.get(
                 "ADMIN_PASSWORD", ""
-            ) and st.secrets.get("ADMIN_PASSWORD", ""):
+            )
 
+            if correct_password and password == correct_password:
                 st.session_state.admin_ok = True
                 st.rerun()
-
             else:
                 st.error(
-                    "Incorrect password or admin password not configured."
+                    "Incorrect password or admin password "
+                    "not configured."
                 )
 
     if st.session_state.get("admin_ok", False):
@@ -379,7 +401,6 @@ elif page == "Admin Dashboard":
             st.rerun()
 
         try:
-
             result = (
                 supabase.table("waste_reports")
                 .select("*")
@@ -436,7 +457,7 @@ elif page == "Admin Dashboard":
                     )
 
                     st.success(
-                        "Report status updated."
+                        "Report status updated successfully."
                     )
 
                     st.rerun()
@@ -451,24 +472,18 @@ elif page == "Admin Dashboard":
                 )
 
             else:
-
                 st.info(
                     "No reports have been submitted yet."
                 )
 
         except Exception as e:
-
             st.error(
                 "The administrator could not retrieve reports."
             )
-
             st.code(
                 f"{type(e).__name__}: {e}"
             )
 
         if st.button("Logout"):
-
             st.session_state.admin_ok = False
             st.rerun()
-
-
