@@ -162,8 +162,8 @@ elif page == "Pune Waste Map":
 
         st.caption(f"Total reports: {len(reports)}")
 
-    except Exception:
-        st.error("The map could not load reports.")
+        except Exception as e:
+        st.error(f"Map error: {e}")
 
 elif page == "Admin Dashboard":
     st.header("Administrator Login")
