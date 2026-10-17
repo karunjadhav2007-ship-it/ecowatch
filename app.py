@@ -1,6 +1,6 @@
-import io
 import uuid
 from datetime import datetime, timezone
+from html import escape
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -44,7 +44,7 @@ st.markdown(
 
     .eco-header {
         background: #ffffff;
-        border: 1px solid #e0e9e1;
+        border: 1px solid #dce8df;
         border-radius: 14px;
         padding: 22px;
         margin-bottom: 18px;
@@ -65,7 +65,7 @@ st.markdown(
 
     .eco-card {
         background: #ffffff;
-        border: 1px solid #e0e9e1;
+        border: 1px solid #dce8df;
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 14px;
@@ -76,17 +76,16 @@ st.markdown(
         font-size: 13px;
     }
 
+    div.stButton > button {
+        border-radius: 8px;
+        min-height: 42px;
+    }
+
     div.stButton > button[kind="primary"] {
         background-color: #198754;
         border-color: #198754;
-        border-radius: 8px;
-        min-height: 44px;
+        color: white;
         font-weight: 600;
-    }
-
-    div.stButton > button {
-        border-radius: 8px;
-        min-height: 40px;
     }
 
     h1, h2, h3 {
@@ -103,7 +102,7 @@ st.markdown(
 
 
 # =========================================================
-# 3. SUPABASE CONNECTION
+# 3. CONNECT TO SUPABASE
 # =========================================================
 
 try:
@@ -127,12 +126,14 @@ try:
         or parsed_url.fragment
     ):
         st.error(
-            "Invalid SUPABASE_URL. "
-            "Use your project's base URL without /rest/v1."
+            "Invalid SUPABASE_URL. Use the project's base URL "
+            "without /rest/v1."
         )
         st.stop()
 
-    supabase_key = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+    supabase_key = st.secrets[
+        "SUPABASE_SERVICE_ROLE_KEY"
+    ]
 
     if not supabase_key.strip():
         st.error("Supabase service key is missing.")
@@ -145,8 +146,8 @@ try:
 
 except Exception:
     st.error(
-        "EcoWatch could not connect to its configuration. "
-        "Check the existing Streamlit Secrets settings."
+        "Could not initialize EcoWatch. "
+        "Please check your existing Streamlit Secrets."
     )
     st.stop()
 
@@ -167,15 +168,20 @@ if "gps_longitude" not in st.session_state:
 if "gps_ready" not in st.session_state:
     st.session_state["gps_ready"] = False
 
+if "eco_admin_authenticated" not in st.session_state:
+    st.session_state["eco_admin_authenticated"] = False
+
 
 # =========================================================
-# 5. DATABASE HELPERS
+# 5. DATABASE FUNCTIONS
 # =========================================================
 
 def get_reports():
     """Retrieve reports from the existing Supabase table."""
+
     result = (
-        supabase.table("waste_reports")
+        supabase
+        .table("waste_reports")
         .select("*")
         .order("created_at", desc=True)
         .execute()
@@ -185,7 +191,8 @@ def get_reports():
 
 
 def upload_photo(uploaded_file):
-    """Upload a report photo to the existing private bucket."""
+    """Upload a photo to the existing private storage bucket."""
+
     extension = uploaded_file.name.rsplit(".", 1)[-1].lower()
 
     allowed_extensions = {
@@ -207,13 +214,17 @@ def upload_photo(uploaded_file):
 
     content_type = uploaded_file.type or "image/jpeg"
 
-    supabase.storage.from_("ecowatch-photos").upload(
-        photo_path,
-        uploaded_file.getvalue(),
-        {
-            "content-type": content_type,
-            "upsert": "false",
-        },
+    (
+        supabase.storage
+        .from_("ecowatch-photos")
+        .upload(
+            photo_path,
+            uploaded_file.getvalue(),
+            {
+                "content-type": content_type,
+                "upsert": "false",
+            },
+        )
     )
 
     return photo_path
@@ -226,16 +237,25 @@ def save_report(
     description,
     uploaded_file,
 ):
-    """Save a report using GPS coordinates only."""
+    """Save a report using actual detected GPS coordinates."""
 
-    photo_path = None
+    latitude = float(latitude)
+    longitude = float(longitude)
 
-    if uploaded_file is not None:
-        photo_path = upload_photo(uploaded_file)
+    if not (
+        -90 <= latitude <= 90
+        and -180 <= longitude <= 180
+    ):
+        raise ValueError("Invalid GPS coordinates.")
+
+    if latitude == 0 and longitude == 0:
+        raise ValueError("GPS location is invalid.")
+
+    photo_path = upload_photo(uploaded_file)
 
     report_data = {
-        "latitude": float(latitude),
-        "longitude": float(longitude),
+        "latitude": latitude,
+        "longitude": longitude,
         "area_name": None,
         "waste_category": category,
         "description": description.strip(),
@@ -243,9 +263,12 @@ def save_report(
         "status": "Pending",
     }
 
-    supabase.table("waste_reports").insert(
-        report_data
-    ).execute()
+    (
+        supabase
+        .table("waste_reports")
+        .insert(report_data)
+        .execute()
+    )
 
 
 # =========================================================
@@ -257,8 +280,8 @@ st.markdown(
     <div class="eco-header">
         <div class="eco-title">🌿 EcoWatch Pune</div>
         <div class="eco-subtitle">
-            A technology-enabled initiative for cleaner
-            public places and responsible plastic waste reporting.
+            Technology-enabled plastic waste reporting
+            for cleaner public places.
         </div>
     </div>
     """,
@@ -267,7 +290,7 @@ st.markdown(
 
 
 # =========================================================
-# 7. VISIBLE NAVIGATION
+# 7. NAVIGATION
 # =========================================================
 
 navigation_options = [
@@ -309,13 +332,12 @@ if selected_page == "Home":
 
             <p>
                 Help identify plastic waste in public places.
-                Submit a report with a photograph and your
-                actual GPS location so the reported spot
-                can appear on the EcoWatch map.
+                Submit a photograph and your actual GPS location
+                to report a waste hotspot.
             </p>
 
             <p class="eco-small">
-                Community participation • GPS-based reporting
+                GPS-based reporting • Community participation
                 • Environmental awareness
             </p>
         </div>
@@ -356,8 +378,8 @@ if selected_page == "Home":
             <div class="eco-card">
                 <h3>01. Locate</h3>
                 <p>
-                    Allow location access to detect the
-                    device's current GPS coordinates.
+                    Allow browser location access to detect
+                    your current GPS coordinates.
                 </p>
             </div>
             """,
@@ -385,7 +407,7 @@ if selected_page == "Home":
                 <h3>03. View</h3>
                 <p>
                     View submitted reports on the map
-                    and track their administrative status.
+                    and follow their administrative status.
                 </p>
             </div>
             """,
@@ -393,7 +415,6 @@ if selected_page == "Home":
         )
 
     st.info(
-        "EcoWatch supports environmental reporting. "
         "A submitted report does not automatically mean "
         "that the location has been cleaned."
     )
@@ -408,8 +429,8 @@ elif selected_page == "Report Plastic Waste":
     st.header("Report Plastic Waste")
 
     st.write(
-        "Detect your current location before submitting "
-        "a report. There is no manual area or locality field."
+        "Detect your current location before submitting. "
+        "There is no manual area or locality field."
     )
 
     st.markdown(
@@ -417,7 +438,7 @@ elif selected_page == "Report Plastic Waste":
         <div class="eco-card">
             <h3>📍 Current GPS Location</h3>
             <p>
-                Tap the location control below and allow
+                Use the location control below and allow
                 your browser to access your location.
             </p>
         </div>
@@ -425,6 +446,7 @@ elif selected_page == "Report Plastic Waste":
         unsafe_allow_html=True,
     )
 
+    # GPS component
     location = streamlit_geolocation()
 
     if (
@@ -456,6 +478,7 @@ elif selected_page == "Report Plastic Waste":
             st.session_state["gps_ready"] = False
 
     if st.session_state["gps_ready"]:
+
         latitude = st.session_state["gps_latitude"]
         longitude = st.session_state["gps_longitude"]
 
@@ -467,16 +490,16 @@ elif selected_page == "Report Plastic Waste":
         )
 
         st.caption(
-            "Check that this is your actual current location "
-            "before submitting the report."
+            "Confirm that the coordinates represent "
+            "your actual current location."
         )
 
     else:
         st.warning(
-            "Location has not been detected yet. "
+            "GPS location has not been detected. "
             "Allow location permission and use the location "
-            "control above. You cannot submit a report "
-            "until valid GPS coordinates are available."
+            "control above. Reports cannot be submitted "
+            "without valid GPS coordinates."
         )
 
     st.divider()
@@ -500,8 +523,7 @@ elif selected_page == "Report Plastic Waste":
         description = st.text_area(
             "Description",
             placeholder=(
-                "Describe the plastic waste and "
-                "the public place where you observed it."
+                "Describe the plastic waste you observed."
             ),
             max_chars=1000,
         )
@@ -509,11 +531,7 @@ elif selected_page == "Report Plastic Waste":
         uploaded_file = st.file_uploader(
             "Upload a photograph",
             type=["jpg", "jpeg", "png", "webp"],
-            help=(
-                "Upload a clear photograph of the "
-                "plastic waste. Do not include "
-                "unnecessary personal information."
-            ),
+            help="Upload a clear photograph of the waste.",
         )
 
         submitted = st.form_submit_button(
@@ -525,26 +543,29 @@ elif selected_page == "Report Plastic Waste":
     if submitted:
 
         if not st.session_state["gps_ready"]:
+
             st.error(
-                "Report not submitted. Detect your "
-                "current GPS location first."
+                "Report not submitted. Detect your current "
+                "GPS location first."
             )
 
         elif uploaded_file is None:
+
             st.error(
-                "Please upload a photograph before submitting."
+                "Please upload a photograph."
             )
 
         elif not description.strip():
+
             st.error(
                 "Please enter a short description."
             )
 
         else:
+
             try:
-                with st.spinner(
-                    "Saving your report securely..."
-                ):
+                with st.spinner("Saving your report..."):
+
                     save_report(
                         latitude=st.session_state[
                             "gps_latitude"
@@ -558,8 +579,7 @@ elif selected_page == "Report Plastic Waste":
                     )
 
                 st.success(
-                    "Your plastic waste report was submitted "
-                    "successfully!"
+                    "Your plastic waste report was submitted!"
                 )
 
                 st.session_state["gps_ready"] = False
@@ -574,9 +594,9 @@ elif selected_page == "Report Plastic Waste":
             except Exception:
                 st.error(
                     "The report could not be saved. "
-                    "Please check your connection and try again. "
-                    "If the problem continues, contact the "
-                    "project administrator."
+                    "Check your connection and try again. "
+                    "If the problem continues, contact "
+                    "the project administrator."
                 )
 
 
@@ -589,16 +609,16 @@ elif selected_page == "Pune Waste Map":
     st.header("Pune Plastic Waste Map")
 
     st.write(
-        "Markers are positioned using the GPS coordinates "
-        "saved with each report, not a manually entered area."
+        "Map markers use the latitude and longitude saved "
+        "with each report, not a manually entered area."
     )
 
     try:
         reports = get_reports()
-
         valid_reports = []
 
         for report in reports:
+
             try:
                 lat = float(report["latitude"])
                 lon = float(report["longitude"])
@@ -621,12 +641,15 @@ elif selected_page == "Pune Waste Map":
         )
 
         if valid_reports:
+
             center_lat = sum(
-                r["_map_lat"] for r in valid_reports
+                report["_map_lat"]
+                for report in valid_reports
             ) / len(valid_reports)
 
             center_lon = sum(
-                r["_map_lon"] for r in valid_reports
+                report["_map_lon"]
+                for report in valid_reports
             ) / len(valid_reports)
 
         else:
@@ -651,33 +674,39 @@ elif selected_page == "Pune Waste Map":
                 report.get("status") or "Pending"
             )
 
-            if status.lower() == "resolved":
+            status_lower = status.lower()
+
+            if status_lower == "resolved":
                 marker_color = "green"
-            elif status.lower() in {
+
+            elif status_lower in {
                 "in progress",
                 "in-progress",
             }:
                 marker_color = "orange"
+
             else:
                 marker_color = "red"
 
-            category_text = str(
-                report.get("waste_category")
-                or "Plastic Waste"
+            category_text = escape(
+                str(
+                    report.get("waste_category")
+                    or "Plastic Waste"
+                )
             )
 
-            description_text = str(
-                report.get("description") or ""
+            description_text = escape(
+                str(report.get("description") or "")[:250]
             )
 
             popup_html = f"""
             <div style="width:220px">
                 <b>{category_text}</b><br>
-                <b>Status:</b> {status}<br>
+                <b>Status:</b> {escape(status)}<br>
                 <b>GPS:</b>
                 {report["_map_lat"]:.6f},
-                {report["_map_lon"]:.6f}<br>
-                <p>{description_text[:250]}</p>
+                {report["_map_lon"]:.6f}
+                <p>{description_text}</p>
             </div>
             """
 
@@ -741,55 +770,46 @@ elif selected_page == "Admin Dashboard":
         "update their status, and export report data."
     )
 
-    admin_password = st.text_input(
-        "Administrator password",
-        type="password",
-    )
+    if not st.session_state["eco_admin_authenticated"]:
 
-    try:
-        configured_password = st.secrets[
-            "ADMIN_PASSWORD"
-        ]
+        with st.form("eco_admin_login"):
 
-    except Exception:
-        configured_password = None
+            admin_password = st.text_input(
+                "Administrator password",
+                type="password",
+            )
 
-    if st.button(
-        "Unlock Dashboard",
-        type="primary",
-    ):
+            login_submitted = st.form_submit_button(
+                "Unlock Dashboard",
+                type="primary",
+            )
 
-        if (
-            configured_password
-            and admin_password
-            and admin_password == configured_password
-        ):
-            st.session_state["eco_admin_authenticated"] = True
-            st.success("Administrator access granted.")
+        if login_submitted:
 
-        else:
-            st.session_state["eco_admin_authenticated"] = False
-            st.error("Incorrect administrator password.")
+            configured_password = st.secrets.get(
+                "ADMIN_PASSWORD",
+                "",
+            )
 
-    if st.session_state.get(
-        "eco_admin_authenticated",
-        False,
-    ):
+            if (
+                configured_password
+                and admin_password
+                and admin_password == configured_password
+            ):
+                st.session_state[
+                    "eco_admin_authenticated"
+                ] = True
 
-        st.divider()
-
-        try:
-            reports = get_reports()
-
-            if not reports:
-                st.info("No reports have been submitted yet.")
+                st.rerun()
 
             else:
-                df = pd.DataFrame(reports)
+                st.error(
+                    "Incorrect administrator password."
+                )
 
-                total_reports = len(df)
+    if st.session_state["eco_admin_authenticated"]:
 
-                pending_count = (
-                    df["status"].fillna("Pending")
-                    .str.lower()
-          
+        if st.button("Lock Admin Dashboard"):
+
+            st.session_state[
+  
