@@ -275,7 +275,7 @@ st.markdown(
 # =========================================================
 # 7. NAVIGATION
 # =========================================================
-nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Community Photos", "Admin Dashboard"]
+nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Community Reports", "Admin Dashboard"]
 if st.session_state.get("eco_page") not in nav_options:
     st.session_state["eco_page"] = "Home"
 
@@ -321,8 +321,8 @@ if selected_page == "Home":
             st.rerun()
     c3, c4 = st.columns(2, gap="medium")
     with c3:
-        if st.button("🖼️\nCOMMUNITY PHOTOS", key="home_photos", use_container_width=True):
-            st.session_state["eco_page"] = "Community Photos"
+        if st.button("📋\nCOMMUNITY REPORTS", key="home_reports_public", use_container_width=True):
+            st.session_state["eco_page"] = "Community Reports"
             st.rerun()
     with c4:
         if st.button("🔐\nADMIN DASHBOARD", key="home_admin", use_container_width=True):
@@ -345,8 +345,8 @@ if selected_page == "Home":
     st.markdown(
         """
         <div class="eco-card eco-how"><h3>🌱 Take action for a cleaner Pune</h3>
-        <p>1. Allow GPS access. &nbsp; 2. Upload a clear photo. &nbsp; 3. Submit your report.</p>
-        <p class="eco-muted">Photos submitted to EcoWatch may be visible to other visitors in Community Photos.</p></div>
+        <p>1. Allow GPS access. &nbsp; 2. Take a photo. &nbsp; 3. Submit your report.</p>
+        <p class="eco-muted">Uploaded photos are private and visible only to the authorised administrator.</p></div>
         """,
         unsafe_allow_html=True,
     )
@@ -354,52 +354,30 @@ if selected_page == "Home":
 
 
 # =========================================================
-# 9A. COMMUNITY PHOTO GALLERY
+# 9A. COMMUNITY REPORTS (NO PUBLIC PHOTOS)
 # =========================================================
-elif selected_page == "Community Photos":
-    st.header("🖼️ Community Photos")
-    st.write("Photos shared through EcoWatch Pune reports. Newest reports appear first.")
-    st.caption("Please upload only photos you are comfortable sharing publicly. Avoid faces, vehicle number plates, and private information.")
+elif selected_page == "Community Reports":
+    st.header("📋 Community Reports")
+    st.write("Browse public report details and status. Uploaded photographs remain private.")
     try:
-        photo_reports = [r for r in get_reports() if r.get("photo_path")]
-        if not photo_reports:
-            st.info("No community photos have been uploaded yet.")
+        public_reports = get_reports()
+        if not public_reports:
+            st.info("No reports have been submitted yet.")
         else:
-            filter_options = ["All categories"] + sorted({str(r.get("waste_category") or "Other") for r in photo_reports})
-            chosen_category = st.selectbox("Filter by waste type", filter_options, key="eco_gallery_filter")
-            if chosen_category != "All categories":
-                photo_reports = [r for r in photo_reports if str(r.get("waste_category") or "Other") == chosen_category]
-            st.markdown(f"**{len(photo_reports)} photo report(s)**")
-            for start in range(0, len(photo_reports), 2):
-                cols = st.columns(2, gap="medium")
-                for col, report in zip(cols, photo_reports[start:start + 2]):
-                    with col:
-                        try:
-                            signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(report["photo_path"], 3600)
-                            image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
-                            if image_url and image_url.startswith("/"):
-                                image_url = supabase_url + "/storage/v1" + image_url
-                            if not image_url:
-                                st.warning("This photo link could not be created.")
-                                continue
-                            st.image(image_url, use_container_width=True)
-                            st.markdown(f"**{escape(str(report.get('waste_category') or 'Plastic Waste'))}**")
-                            st.caption(f"Status: {escape(str(report.get('status') or 'Pending'))}")
-                            description_text = str(report.get("description") or "").strip()
-                            if description_text:
-                                st.write(description_text[:220])
-                            created = str(report.get("created_at") or "")
-                            if created:
-                                st.caption(f"Reported: {created[:10]}")
-                            if st.button("📍 Show this photo on map", key=f"eco_photo_map_{report.get('id', start)}", use_container_width=True):
-                                st.session_state["eco_map_target_report_id"] = str(report.get("id", ""))
-                                st.session_state["eco_page"] = "Pune Waste Map"
-                                st.rerun()
-                        except Exception as photo_exc:
-                            st.warning("Could not load one of the uploaded photos.")
-                            st.caption(f"Photo detail: {photo_exc}")
+            rows = []
+            for report in public_reports:
+                rows.append({
+                    "Reported": str(report.get("created_at") or "")[:10],
+                    "Waste type": str(report.get("waste_category") or "Plastic Waste"),
+                    "Status": str(report.get("status") or "Pending"),
+                    "Description": str(report.get("description") or "")[:220],
+                    "Latitude": report.get("latitude"),
+                    "Longitude": report.get("longitude"),
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.caption("Photos are not shown here or in public map popups.")
     except Exception as exc:
-        st.error("Community photos could not be loaded.")
+        st.error("Community reports could not be loaded.")
         st.caption(f"Technical detail: {exc}")
 
 
@@ -408,7 +386,7 @@ elif selected_page == "Community Photos":
 # =========================================================
 elif selected_page == "Report Plastic Waste":
     st.header("Report Plastic Waste")
-    st.write("Detect your current location before submitting. There is no manual area or locality field.")
+    st.write("Take a waste photo and submit it with your automatically detected GPS location. No area name is required.")
     st.markdown('<div class="eco-card"><h3>📍 Current GPS Location</h3><p>Use the location control below and allow your browser to access your location.</p></div>', unsafe_allow_html=True)
 
     try:
@@ -445,7 +423,7 @@ elif selected_page == "Report Plastic Waste":
 
     st.divider()
     with st.form("eco_report_form"):
-        st.subheader("Report Details")
+        st.subheader("📸 Take a photo of the waste")
         category = st.selectbox(
             "Type of plastic waste",
             ["Plastic Bottles", "Plastic Bags", "Food Wrappers", "Plastic Packaging", "Mixed Plastic Waste", "Other Plastic Waste"],
@@ -455,10 +433,9 @@ elif selected_page == "Report Plastic Waste":
             placeholder="Describe the plastic waste you observed.",
             max_chars=1000,
         )
-        uploaded_file = st.file_uploader(
-            "Upload a photograph",
-            type=["jpg", "jpeg", "png", "webp"],
-            help="Upload a clear photograph of the waste.",
+        uploaded_file = st.camera_input(
+            "Open camera and take a waste photo",
+            help="Your photo is stored privately and is not shown to public users.",
         )
         submitted = st.form_submit_button("Submit Waste Report", type="primary", use_container_width=True)
 
@@ -466,7 +443,7 @@ elif selected_page == "Report Plastic Waste":
         if not st.session_state["gps_ready"]:
             st.error("Report not submitted. Detect your current GPS location first.")
         elif uploaded_file is None:
-            st.error("Please upload a photograph.")
+            st.error("Please take a photograph using the camera before submitting.")
         elif not description.strip():
             st.error("Please enter a short description.")
         else:
@@ -539,46 +516,28 @@ elif selected_page == "Pune Waste Map":
 
             category_text = escape(str(report.get("waste_category") or "Plastic Waste"))
             description_text = escape(str(report.get("description") or "")[:250])
-            photo_html = "<p><i>No photo attached to this report.</i></p>"
-            photo_path = report.get("photo_path")
-            if photo_path:
-                try:
-                    signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(photo_path, 3600)
-                    image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
-                    if image_url and image_url.startswith("/"):
-                        image_url = supabase_url + "/storage/v1" + image_url
-                    if image_url:
-                        safe_image_url = escape(str(image_url), quote=True)
-                        photo_html = (
-                            f"<img src='{safe_image_url}' alt='Community waste report photo' "
-                            "style='width:100%;max-width:250px;height:auto;max-height:190px;object-fit:contain;"
-                            "border-radius:8px;margin-top:8px;background:#111;' />"
-                        )
-                    else:
-                        photo_html = "<p><i>Photo link is unavailable.</i></p>"
-                except Exception:
-                    photo_html = "<p><i>Photo could not be loaded.</i></p>"
             popup_html = (
-                f"<div style='width:240px;font-family:Arial,sans-serif;color:#111;'>"
+                f"<div style='width:220px;font-family:Arial,sans-serif;color:#111;'>"
                 f"<b>{category_text}</b><br>"
                 f"<b>Status:</b> {escape(status)}<br>"
                 f"<b>GPS:</b> {report['_map_lat']:.6f}, {report['_map_lon']:.6f}"
-                f"{photo_html}<p>{description_text}</p></div>"
+                f"<p>{description_text}</p>"
+                "<p><i>Photo is private and only available to the authorised administrator.</i></p></div>"
             )
             should_open = bool(target_report and str(report.get("id", "")) == target_report_id)
             folium.Marker(
                 location=[report["_map_lat"], report["_map_lon"]],
-                tooltip=f"{category_text} — tap to view photo and details",
+                tooltip=f"{category_text} — tap to view report details",
                 popup=folium.Popup(popup_html, max_width=300, show=should_open),
                 icon=folium.Icon(color=marker_color, icon="info-sign"),
             ).add_to(waste_map)
 
         st_folium(waste_map, use_container_width=True, height=550, returned_objects=[], key="eco_pune_map")
-        st.markdown("**Tap any map marker to view its uploaded community photo and report details.**")
+        st.markdown("**Tap any map marker to view report details. Photos are private and are never shown on the public map.**")
         st.markdown("**Map marker colours:** 🔴 Red — Pending or other status · 🟠 Orange — In Progress · 🟢 Green — Resolved")
         if target_report:
-            st.success("Showing the selected community photo's location. Tap its map marker to view the photo and report details.")
-            if st.button("Clear selected photo", key="eco_clear_map_target"):
+            st.success("Showing the selected report location.")
+            if st.button("Clear selected report", key="eco_clear_map_target"):
                 st.session_state.pop("eco_map_target_report_id", None)
                 st.rerun()
         if not valid_reports:
@@ -640,6 +599,42 @@ elif selected_page == "Admin Dashboard":
                     ] if column in df.columns
                 ]
                 st.dataframe(df[display_columns], use_container_width=True, hide_index=True)
+
+                st.subheader("🔒 Private Report Photos — Administrator Only")
+                photo_reports = [r for r in reports if r.get("photo_path")]
+                if photo_reports:
+                    photo_lookup = {
+                        str(r.get("id")): r for r in photo_reports if r.get("id") is not None
+                    }
+                    chosen_photo_id = st.selectbox(
+                        "Choose a report photo to view privately",
+                        list(photo_lookup.keys()),
+                        format_func=lambda rid: (
+                            f"{photo_lookup[rid].get('waste_category', 'Waste')} | "
+                            f"{str(photo_lookup[rid].get('created_at') or '')[:10]} | ID {rid[:8]}"
+                        ),
+                        key="eco_admin_private_photo",
+                    )
+                    if st.button("View selected private photo", key="eco_admin_view_private_photo"):
+                        try:
+                            selected_photo_report = photo_lookup[chosen_photo_id]
+                            signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(
+                                selected_photo_report["photo_path"], 300
+                            )
+                            image_url = (signed_result.get("signedURL") or
+                                         signed_result.get("signedUrl") or
+                                         signed_result.get("signed_url"))
+                            if image_url and image_url.startswith("/"):
+                                image_url = supabase_url + "/storage/v1" + image_url
+                            if image_url:
+                                st.image(image_url, caption="Private photo — administrator view only", use_container_width=True)
+                            else:
+                                st.warning("A private photo link could not be created.")
+                        except Exception as photo_exc:
+                            st.error("The private photo could not be opened.")
+                            st.caption(f"Technical detail: {photo_exc}")
+                else:
+                    st.info("No report photos are available.")
 
                 st.subheader("Update Report Status")
                 report_ids = [str(report["id"]) for report in reports if report.get("id") is not None]
@@ -750,4 +745,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)
+            )
+        
