@@ -391,52 +391,10 @@ elif selected_page == "Community Photos":
                             created = str(report.get("created_at") or "")
                             if created:
                                 st.caption(f"Reported: {created[:10]}")
-                        except Exception as photo_exc:
-                            st.warning("Could not load one of the uploaded photos.")
-                            st.caption(f"Photo detail: {photo_exc}")
-    except Exception as exc:
-        st.error("Community photos could not be loaded.")
-        st.caption(f"Technical detail: {exc}")
-
-
-# =========================================================
-# 9. REPORT FORM (GPS ONLY; NO MANUAL AREA FIELD)
-# =========================================================
-elif selected_page == "Community Photos":
-    st.header("🖼️ Community Photos")
-    st.write("Photos shared through EcoWatch Pune reports. Newest reports appear first.")
-    st.caption("Please upload only photos you are comfortable sharing publicly. Avoid faces, vehicle number plates, and private information.")
-    try:
-        photo_reports = [r for r in get_reports() if r.get("photo_path")]
-        if not photo_reports:
-            st.info("No community photos have been uploaded yet.")
-        else:
-            filter_options = ["All categories"] + sorted({str(r.get("waste_category") or "Other") for r in photo_reports})
-            chosen_category = st.selectbox("Filter by waste type", filter_options, key="eco_gallery_filter")
-            if chosen_category != "All categories":
-                photo_reports = [r for r in photo_reports if str(r.get("waste_category") or "Other") == chosen_category]
-            st.markdown(f"**{len(photo_reports)} photo report(s)**")
-            for start in range(0, len(photo_reports), 2):
-                cols = st.columns(2, gap="medium")
-                for col, report in zip(cols, photo_reports[start:start + 2]):
-                    with col:
-                        try:
-                            signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(report["photo_path"], 3600)
-                            image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
-                            if image_url and image_url.startswith("/"):
-                                image_url = supabase_url + "/storage/v1" + image_url
-                            if not image_url:
-                                st.warning("This photo link could not be created.")
-                                continue
-                            st.image(image_url, use_container_width=True)
-                            st.markdown(f"**{escape(str(report.get('waste_category') or 'Plastic Waste'))}**")
-                            st.caption(f"Status: {escape(str(report.get('status') or 'Pending'))}")
-                            description_text = str(report.get("description") or "").strip()
-                            if description_text:
-                                st.write(description_text[:220])
-                            created = str(report.get("created_at") or "")
-                            if created:
-                                st.caption(f"Reported: {created[:10]}")
+                            if st.button("📍 Show this photo on map", key=f"eco_photo_map_{report.get('id', start)}", use_container_width=True):
+                                st.session_state["eco_map_target_report_id"] = str(report.get("id", ""))
+                                st.session_state["eco_page"] = "Pune Waste Map"
+                                st.rerun()
                         except Exception as photo_exc:
                             st.warning("Could not load one of the uploaded photos.")
                             st.caption(f"Photo detail: {photo_exc}")
@@ -553,13 +511,20 @@ elif selected_page == "Pune Waste Map":
                 continue
 
         st.metric("Reports with valid coordinates", len(valid_reports))
-        if valid_reports:
+        target_report_id = str(st.session_state.get("eco_map_target_report_id") or "")
+        target_report = next((r for r in valid_reports if str(r.get("id", "")) == target_report_id), None)
+        if target_report:
+            center_lat, center_lon = target_report["_map_lat"], target_report["_map_lon"]
+            map_zoom = 16
+        elif valid_reports:
             center_lat = sum(report["_map_lat"] for report in valid_reports) / len(valid_reports)
             center_lon = sum(report["_map_lon"] for report in valid_reports) / len(valid_reports)
+            map_zoom = 12
         else:
             center_lat, center_lon = 18.5204, 73.8567
+            map_zoom = 12
 
-        waste_map = folium.Map(location=[center_lat, center_lon], zoom_start=12, control_scale=True)
+        waste_map = folium.Map(location=[center_lat, center_lon], zoom_start=map_zoom, control_scale=True)
         Fullscreen(position="topright", title="Full screen", title_cancel="Exit full screen").add_to(waste_map)
 
         for report in valid_reports:
@@ -574,21 +539,48 @@ elif selected_page == "Pune Waste Map":
 
             category_text = escape(str(report.get("waste_category") or "Plastic Waste"))
             description_text = escape(str(report.get("description") or "")[:250])
+            photo_html = "<p><i>No photo attached to this report.</i></p>"
+            photo_path = report.get("photo_path")
+            if photo_path:
+                try:
+                    signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(photo_path, 3600)
+                    image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
+                    if image_url and image_url.startswith("/"):
+                        image_url = supabase_url + "/storage/v1" + image_url
+                    if image_url:
+                        safe_image_url = escape(str(image_url), quote=True)
+                        photo_html = (
+                            f"<img src='{safe_image_url}' alt='Community waste report photo' "
+                            "style='width:100%;max-width:250px;height:auto;max-height:190px;object-fit:contain;"
+                            "border-radius:8px;margin-top:8px;background:#111;' />"
+                        )
+                    else:
+                        photo_html = "<p><i>Photo link is unavailable.</i></p>"
+                except Exception:
+                    photo_html = "<p><i>Photo could not be loaded.</i></p>"
             popup_html = (
-                f"<div style='width:220px'><b>{category_text}</b><br>"
+                f"<div style='width:240px;font-family:Arial,sans-serif;color:#111;'>"
+                f"<b>{category_text}</b><br>"
                 f"<b>Status:</b> {escape(status)}<br>"
                 f"<b>GPS:</b> {report['_map_lat']:.6f}, {report['_map_lon']:.6f}"
-                f"<p>{description_text}</p></div>"
+                f"{photo_html}<p>{description_text}</p></div>"
             )
+            should_open = bool(target_report and str(report.get("id", "")) == target_report_id)
             folium.Marker(
                 location=[report["_map_lat"], report["_map_lon"]],
-                tooltip=category_text,
-                popup=folium.Popup(popup_html, max_width=280),
+                tooltip=f"{category_text} — tap to view photo and details",
+                popup=folium.Popup(popup_html, max_width=300, show=should_open),
                 icon=folium.Icon(color=marker_color, icon="info-sign"),
             ).add_to(waste_map)
 
         st_folium(waste_map, use_container_width=True, height=550, returned_objects=[], key="eco_pune_map")
+        st.markdown("**Tap any map marker to view its uploaded community photo and report details.**")
         st.markdown("**Map marker colours:** 🔴 Red — Pending or other status · 🟠 Orange — In Progress · 🟢 Green — Resolved")
+        if target_report:
+            st.success("Showing the selected community photo's location. Tap its map marker to view the photo and report details.")
+            if st.button("Clear selected photo", key="eco_clear_map_target"):
+                st.session_state.pop("eco_map_target_report_id", None)
+                st.rerun()
         if not valid_reports:
             st.info("No reports with valid GPS coordinates are available to display yet.")
     except Exception as exc:
@@ -758,5 +750,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-        )
-                                    
+)
