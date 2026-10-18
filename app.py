@@ -42,7 +42,7 @@ st.markdown(
         border-radius: 12px; padding: 20px; margin-bottom: 14px;
     }
     .eco-small { color: #647468; font-size: 13px; }
-    div.stButton > button { border-radius: 8px; min-height: 42px; }
+    div.stButton > button { border-radius: 8px; min-height: 62px; font-size: 17px; font-weight: 600; }
     div.stButton > button[kind="primary"] {
         background-color: #198754; border-color: #198754; color: white;
     }
@@ -172,17 +172,25 @@ st.markdown(
 # 7. NAVIGATION
 # =========================================================
 nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Admin Dashboard"]
-if st.session_state.get("eco_page") not in nav_options:
-    st.session_state["eco_page"] = "Home"
+current_page = st.session_state.get("eco_page", "Home")
+if current_page not in nav_options:
+    current_page = "Home"
 
-selected_page = st.session_state["eco_page"]
-
-# On inner pages, show a clear Home button instead of hiding navigation
-# behind the Streamlit sidebar/menu.
+# Keep the existing navigation on inner pages. On Home, show the three main
+# actions directly as large buttons instead of making users use navigation.
+if current_page == "Home":
+    selected_page = "Home"
+else:
+    selected_page = st.radio(
+        "Navigation",
+        nav_options,
+        index=nav_options.index(current_page),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="eco_navigation",
+    )
+st.session_state["eco_page"] = selected_page
 if selected_page != "Home":
-    if st.button("🏠 Back to Home", key="eco_back_home"):
-        st.session_state["eco_page"] = "Home"
-        st.rerun()
     st.divider()
 
 
@@ -200,24 +208,18 @@ if selected_page == "Home":
         """,
         unsafe_allow_html=True,
     )
-
-    st.markdown("## Choose a Service")
-    st.caption("Tap one of the large options below to open that section.")
-
+    st.markdown("### Choose an Option")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown('<div class="eco-card" style="text-align:center;min-height:155px"><div style="font-size:52px">📍</div><h3>Report Plastic Waste</h3><p>Submit a photo and GPS location.</p></div>', unsafe_allow_html=True)
-        if st.button("📍 Open Report Form", key="home_report", type="primary", use_container_width=True):
+        if st.button("📍\nReport Plastic Waste", type="primary", use_container_width=True, key="home_report_button"):
             st.session_state["eco_page"] = "Report Plastic Waste"
             st.rerun()
     with col2:
-        st.markdown('<div class="eco-card" style="text-align:center;min-height:155px"><div style="font-size:52px">🗺️</div><h3>Pune Waste Map</h3><p>Explore reported waste locations.</p></div>', unsafe_allow_html=True)
-        if st.button("🗺️ Open Waste Map", key="home_map", use_container_width=True):
+        if st.button("🗺️\nPune Waste Map", use_container_width=True, key="home_map_button"):
             st.session_state["eco_page"] = "Pune Waste Map"
             st.rerun()
     with col3:
-        st.markdown('<div class="eco-card" style="text-align:center;min-height:155px"><div style="font-size:52px">🔐</div><h3>Admin Dashboard</h3><p>Review and manage reports.</p></div>', unsafe_allow_html=True)
-        if st.button("🔐 Open Admin Dashboard", key="home_admin", use_container_width=True):
+        if st.button("🔐\nAdmin Dashboard", use_container_width=True, key="home_admin_button"):
             st.session_state["eco_page"] = "Admin Dashboard"
             st.rerun()
 
@@ -445,73 +447,6 @@ elif selected_page == "Admin Dashboard":
                         st.success("Report status updated.")
                         st.rerun()
 
-                st.divider()
-                st.subheader("Delete Report")
-                st.warning(
-                    "Deleting a report is permanent. Select the correct report and confirm below."
-                )
-
-                delete_report_lookup = {
-                    str(report["id"]): report
-                    for report in reports
-                    if report.get("id") is not None
-                }
-                delete_report_ids = list(delete_report_lookup.keys())
-
-                if delete_report_ids:
-                    delete_id = st.selectbox(
-                        "Select a report to delete",
-                        delete_report_ids,
-                        format_func=lambda report_id: (
-                            f"{delete_report_lookup[report_id].get('waste_category', 'Report')} | "
-                            f"{delete_report_lookup[report_id].get('created_at', 'Unknown date')} | "
-                            f"ID: {report_id[:8]}"
-                        ),
-                        key="eco_delete_report_id",
-                    )
-                    confirm_delete = st.checkbox(
-                        "I confirm that I want to permanently delete this report.",
-                        key="eco_confirm_delete",
-                    )
-                    if st.button(
-                        "🗑️ Delete Selected Report",
-                        type="primary",
-                        key="eco_delete_report_button",
-                    ):
-                        if not confirm_delete:
-                            st.error("Tick the confirmation checkbox before deleting.")
-                        else:
-                            try:
-                                report_to_delete = delete_report_lookup[delete_id]
-                                # Remove the database row first.
-                                (
-                                    supabase.table("waste_reports")
-                                    .delete()
-                                    .eq("id", delete_id)
-                                    .execute()
-                                )
-                                st.success("Report deleted from the database.")
-
-                                # Remove the associated photo from Supabase Storage if present.
-                                photo_path = report_to_delete.get("photo_path")
-                                if photo_path:
-                                    try:
-                                        supabase.storage.from_("ecowatch-photos").remove([photo_path])
-                                        st.success("Associated photograph removed from storage.")
-                                    except Exception as photo_exc:
-                                        st.warning(
-                                            "The report was deleted, but the stored photo could not be removed."
-                                        )
-                                        st.caption(f"Photo storage detail: {photo_exc}")
-
-                                st.session_state["eco_confirm_delete"] = False
-                                st.rerun()
-                            except Exception as exc:
-                                st.error("Could not delete the selected report.")
-                                st.caption(f"Technical detail: {exc}")
-                else:
-                    st.info("There are no reports available to delete.")
-
                 st.subheader("Export Reports")
                 csv_data = df.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
@@ -540,3 +475,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
