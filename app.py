@@ -29,19 +29,108 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .stApp { background: #f6f8f6; }
+    /* Consistent black theme with high-contrast readable text */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"],
+    [data-testid="stHeader"], [data-testid="stToolbar"] {
+        background: #000000 !important;
+        color: #ffffff !important;
+    }
     .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 900px; }
-    .eco-header { background: #ffffff; border: 1px solid #d9e5dc; border-left: 6px solid #168447;
-        border-radius: 12px; padding: 18px; margin-bottom: 18px; }
-    .eco-title { color: #176b3a; font-size: clamp(26px, 5vw, 36px); font-weight: 800; margin: 0; }
-    .eco-subtitle { color: #53675a; font-size: 15px; margin-top: 7px; }
-    .eco-card { background: #ffffff; border: 1px solid #dce8df; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-    .eco-small { color: #647468; font-size: 13px; }
-    div.stButton > button { width: 100%; min-height: 68px; border-radius: 12px; font-size: 17px; font-weight: 700;
-        white-space: normal; border: 1px solid #c9d9cd; }
-    div.stButton > button[kind="primary"] { background: #168447; border-color: #168447; color: #ffffff; }
-    div.stButton > button:hover { border-color: #168447; color: #126b39; }
-    h1, h2, h3 { color: #183d28; }
+
+    /* Make normal text, labels, captions and metrics clearly visible */
+    .stApp, .stApp p, .stApp span, .stApp label, .stApp li,
+    .stApp [data-testid="stMarkdownContainer"],
+    .stApp [data-testid="stMarkdownContainer"] p,
+    .stApp [data-testid="stMarkdownContainer"] li,
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stWidgetLabel"],
+    .stApp [data-testid="stMetricLabel"],
+    .stApp [data-testid="stMetricValue"],
+    .stApp [data-testid="stMetricDelta"] {
+        color: #ffffff !important;
+        opacity: 1 !important;
+    }
+    h1, h2, h3, h4, h5, h6,
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
+        color: #ffffff !important;
+        opacity: 1 !important;
+    }
+
+    /* Dark cards and header blend with the black background */
+    .eco-header, .eco-card {
+        background: #111111 !important;
+        color: #ffffff !important;
+        border: 1px solid #454545;
+        border-left: 6px solid #18a558;
+        border-radius: 12px;
+        padding: 18px;
+        margin-bottom: 18px;
+    }
+    .eco-title { color: #5be28b !important; font-size: clamp(26px, 5vw, 36px); font-weight: 800; margin: 0; }
+    .eco-subtitle { color: #e0e0e0 !important; font-size: 15px; margin-top: 7px; }
+    .eco-card * { color: #ffffff !important; opacity: 1 !important; }
+    .eco-card h2, .eco-card h3, .eco-card b, .eco-card strong { color: #5be28b !important; }
+    .eco-small { color: #eeeeee !important; font-size: 14px; }
+
+    /* Captions and helper text stay bright against black */
+    [data-testid="stCaptionContainer"], .stCaption, small {
+        color: #e0e0e0 !important; opacity: 1 !important;
+    }
+
+    /* Inputs use dark backgrounds and white text */
+    .stTextInput input, .stTextArea textarea, .stNumberInput input,
+    [data-baseweb="select"] > div, [data-baseweb="input"] > div,
+    [data-baseweb="textarea"] > div {
+        background: #171717 !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        border-color: #777777 !important;
+        opacity: 1 !important;
+    }
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+        color: #c4c4c4 !important; -webkit-text-fill-color: #c4c4c4 !important; opacity: 1 !important;
+    }
+    [data-baseweb="select"] *, [role="option"], [role="listbox"] {
+        color: #ffffff !important;
+        background-color: #171717 !important;
+    }
+    .stFileUploader, [data-testid="stFileUploader"] {
+        color: #ffffff !important; opacity: 1 !important;
+    }
+
+    /* Buttons remain readable and prominent */
+    div.stButton > button, div.stFormSubmitButton > button,
+    [data-testid="stDownloadButton"] button {
+        width: 100%; min-height: 60px; border-radius: 12px;
+        font-size: 17px; font-weight: 700; white-space: normal;
+        border: 1px solid #666666 !important;
+        background: #1b1b1b !important; color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        opacity: 1 !important;
+    }
+    div.stButton > button[kind="primary"],
+    div.stFormSubmitButton > button[kind="primary"],
+    [data-testid="stDownloadButton"] button {
+        background: #08783e !important; border-color: #18a558 !important;
+        color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;
+    }
+    div.stButton > button:hover, div.stFormSubmitButton > button:hover {
+        border-color: #5be28b !important;
+        filter: brightness(1.12);
+    }
+
+    /* Messages and data widgets remain legible */
+    [data-testid="stAlert"] *, [data-testid="stMetric"] *,
+    [data-testid="stDataFrame"] *, [data-testid="stTable"] * {
+        opacity: 1 !important;
+    }
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        color: #ffffff !important;
+    }
+    [data-testid="stDataFrame"] *, [data-testid="stTable"] * {
+        color: #ffffff !important;
+    }
+    hr { border-color: #555555 !important; }
     footer { visibility: hidden; }
     </style>
     """,
@@ -537,5 +626,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-                        )
-                                        
+                )
