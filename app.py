@@ -429,8 +429,8 @@ elif selected_page == "Report Plastic Waste":
             ["Plastic Bottles", "Plastic Bags", "Food Wrappers", "Plastic Packaging", "Mixed Plastic Waste", "Other Plastic Waste"],
         )
         description = st.text_area(
-            "Description",
-            placeholder="Describe the plastic waste you observed.",
+            "Description (Optional)",
+            placeholder="Optional — add any useful details, or leave this blank.",
             max_chars=1000,
         )
         uploaded_file = st.camera_input(
@@ -444,8 +444,6 @@ elif selected_page == "Report Plastic Waste":
             st.error("Report not submitted. Detect your current GPS location first.")
         elif uploaded_file is None:
             st.error("Please take a photograph using the camera before submitting.")
-        elif not description.strip():
-            st.error("Please enter a short description.")
         else:
             try:
                 with st.spinner("Saving your report..."):
@@ -745,5 +743,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-            )
-        
+)
