@@ -29,23 +29,18 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .stApp { background-color: #f7faf7; }
-    .block-container { padding-top: 1.5rem; max-width: 1200px; }
-    .eco-header {
-        background: #ffffff; border: 1px solid #dce8df;
-        border-radius: 14px; padding: 22px; margin-bottom: 18px;
-    }
-    .eco-title { color: #176b3a; font-size: 34px; font-weight: 750; margin: 0; }
-    .eco-subtitle { color: #53675a; font-size: 15px; margin-top: 8px; }
-    .eco-card {
-        background: #ffffff; border: 1px solid #dce8df;
-        border-radius: 12px; padding: 20px; margin-bottom: 14px;
-    }
+    .stApp { background: #f6f8f6; }
+    .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 900px; }
+    .eco-header { background: #ffffff; border: 1px solid #d9e5dc; border-left: 6px solid #168447;
+        border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+    .eco-title { color: #176b3a; font-size: clamp(26px, 5vw, 36px); font-weight: 800; margin: 0; }
+    .eco-subtitle { color: #53675a; font-size: 15px; margin-top: 7px; }
+    .eco-card { background: #ffffff; border: 1px solid #dce8df; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
     .eco-small { color: #647468; font-size: 13px; }
-    div.stButton > button { border-radius: 8px; min-height: 62px; font-size: 17px; font-weight: 600; }
-    div.stButton > button[kind="primary"] {
-        background-color: #198754; border-color: #198754; color: white;
-    }
+    div.stButton > button { width: 100%; min-height: 68px; border-radius: 12px; font-size: 17px; font-weight: 700;
+        white-space: normal; border: 1px solid #c9d9cd; }
+    div.stButton > button[kind="primary"] { background: #168447; border-color: #168447; color: #ffffff; }
+    div.stButton > button:hover { border-color: #168447; color: #126b39; }
     h1, h2, h3 { color: #183d28; }
     footer { visibility: hidden; }
     </style>
@@ -172,25 +167,17 @@ st.markdown(
 # 7. NAVIGATION
 # =========================================================
 nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Admin Dashboard"]
-current_page = st.session_state.get("eco_page", "Home")
-if current_page not in nav_options:
-    current_page = "Home"
+if st.session_state.get("eco_page") not in nav_options:
+    st.session_state["eco_page"] = "Home"
 
-# Keep the existing navigation on inner pages. On Home, show the three main
-# actions directly as large buttons instead of making users use navigation.
-if current_page == "Home":
-    selected_page = "Home"
-else:
-    selected_page = st.radio(
-        "Navigation",
-        nav_options,
-        index=nav_options.index(current_page),
-        horizontal=True,
-        label_visibility="collapsed",
-        key="eco_navigation",
-    )
-st.session_state["eco_page"] = selected_page
+selected_page = st.session_state["eco_page"]
+
+# On inner pages, show a clear Home button instead of hiding navigation
+# behind the Streamlit sidebar/menu.
 if selected_page != "Home":
+    if st.button("🏠  BACK TO HOME", key="eco_back_home", use_container_width=True):
+        st.session_state["eco_page"] = "Home"
+        st.rerun()
     st.divider()
 
 
@@ -201,37 +188,40 @@ if selected_page == "Home":
     st.markdown(
         """
         <div class="eco-card">
-            <h1>Cleaner Pune Starts With Us</h1>
-            <p>Help identify plastic waste in public places. Submit a photograph and your actual GPS location to report a waste hotspot.</p>
-            <p class="eco-small">GPS-based reporting • Community participation • Environmental awareness</p>
+            <h2>Cleaner public places start with us.</h2>
+            <p>Report plastic waste with a photo and your current GPS location, view reports on the map, or manage submissions as an administrator.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("### Choose an Option")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📍\nReport Plastic Waste", type="primary", use_container_width=True, key="home_report_button"):
-            st.session_state["eco_page"] = "Report Plastic Waste"
-            st.rerun()
-    with col2:
-        if st.button("🗺️\nPune Waste Map", use_container_width=True, key="home_map_button"):
-            st.session_state["eco_page"] = "Pune Waste Map"
-            st.rerun()
-    with col3:
-        if st.button("🔐\nAdmin Dashboard", use_container_width=True, key="home_admin_button"):
-            st.session_state["eco_page"] = "Admin Dashboard"
-            st.rerun()
 
-    st.markdown("### How EcoWatch Works")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown('<div class="eco-card"><h3>01. Locate</h3><p>Allow browser location access to detect your current GPS coordinates.</p></div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown('<div class="eco-card"><h3>02. Report</h3><p>Upload a photograph and describe the plastic waste you observe.</p></div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown('<div class="eco-card"><h3>03. View</h3><p>View submitted reports on the map and follow their administrative status.</p></div>', unsafe_allow_html=True)
-    st.info("A submitted report does not automatically mean that the location has been cleaned.")
+    st.markdown("## Choose an option")
+    st.caption("Tap one button to continue.")
+
+    if st.button("📍   REPORT PLASTIC WASTE", key="home_report", type="primary", use_container_width=True):
+        st.session_state["eco_page"] = "Report Plastic Waste"
+        st.rerun()
+
+    if st.button("🗺️   PUNE WASTE MAP", key="home_map", use_container_width=True):
+        st.session_state["eco_page"] = "Pune Waste Map"
+        st.rerun()
+
+    if st.button("🔐   ADMIN DASHBOARD", key="home_admin", use_container_width=True):
+        st.session_state["eco_page"] = "Admin Dashboard"
+        st.rerun()
+
+    st.markdown(
+        """
+        <div class="eco-card">
+            <b>How it works</b><br><br>
+            1. Detect your current location.<br>
+            2. Upload a photo and submit a report.<br>
+            3. View saved report locations on the map.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption("EcoWatch Pune • Plastic Free Public Places Campaign • AY 2026–27")
 
 
 # =========================================================
@@ -242,7 +232,13 @@ elif selected_page == "Report Plastic Waste":
     st.write("Detect your current location before submitting. There is no manual area or locality field.")
     st.markdown('<div class="eco-card"><h3>📍 Current GPS Location</h3><p>Use the location control below and allow your browser to access your location.</p></div>', unsafe_allow_html=True)
 
-    location = streamlit_geolocation()
+    try:
+        location = streamlit_geolocation()
+    except Exception as exc:
+        location = None
+        st.error("The location control could not start. Check browser location permission and reload the page.")
+        st.caption(f"Location detail: {exc}")
+
     if isinstance(location, dict) and location.get("latitude") is not None and location.get("longitude") is not None:
         try:
             detected_lat = float(location["latitude"])
@@ -447,6 +443,73 @@ elif selected_page == "Admin Dashboard":
                         st.success("Report status updated.")
                         st.rerun()
 
+                st.divider()
+                st.subheader("Delete Report")
+                st.warning(
+                    "Deleting a report is permanent. Select the correct report and confirm below."
+                )
+
+                delete_report_lookup = {
+                    str(report["id"]): report
+                    for report in reports
+                    if report.get("id") is not None
+                }
+                delete_report_ids = list(delete_report_lookup.keys())
+
+                if delete_report_ids:
+                    delete_id = st.selectbox(
+                        "Select a report to delete",
+                        delete_report_ids,
+                        format_func=lambda report_id: (
+                            f"{delete_report_lookup[report_id].get('waste_category', 'Report')} | "
+                            f"{delete_report_lookup[report_id].get('created_at', 'Unknown date')} | "
+                            f"ID: {report_id[:8]}"
+                        ),
+                        key="eco_delete_report_id",
+                    )
+                    confirm_delete = st.checkbox(
+                        "I confirm that I want to permanently delete this report.",
+                        key="eco_confirm_delete",
+                    )
+                    if st.button(
+                        "🗑️ Delete Selected Report",
+                        type="primary",
+                        key="eco_delete_report_button",
+                    ):
+                        if not confirm_delete:
+                            st.error("Tick the confirmation checkbox before deleting.")
+                        else:
+                            try:
+                                report_to_delete = delete_report_lookup[delete_id]
+                                # Remove the database row first.
+                                (
+                                    supabase.table("waste_reports")
+                                    .delete()
+                                    .eq("id", delete_id)
+                                    .execute()
+                                )
+                                st.success("Report deleted from the database.")
+
+                                # Remove the associated photo from Supabase Storage if present.
+                                photo_path = report_to_delete.get("photo_path")
+                                if photo_path:
+                                    try:
+                                        supabase.storage.from_("ecowatch-photos").remove([photo_path])
+                                        st.success("Associated photograph removed from storage.")
+                                    except Exception as photo_exc:
+                                        st.warning(
+                                            "The report was deleted, but the stored photo could not be removed."
+                                        )
+                                        st.caption(f"Photo storage detail: {photo_exc}")
+
+                                st.session_state["eco_confirm_delete"] = False
+                                st.rerun()
+                            except Exception as exc:
+                                st.error("Could not delete the selected report.")
+                                st.caption(f"Technical detail: {exc}")
+                else:
+                    st.info("There are no reports available to delete.")
+
                 st.subheader("Export Reports")
                 csv_data = df.to_csv(index=False).encode("utf-8-sig")
                 st.download_button(
@@ -474,5 +537,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)
-
+                        )
+                                        
