@@ -130,6 +130,26 @@ st.markdown(
     [data-testid="stDataFrame"] *, [data-testid="stTable"] * {
         color: #ffffff !important;
     }
+
+    /* App-like EcoWatch home screen */
+    .eco-hero { display:flex; align-items:center; gap:14px; padding:18px 8px 20px; }
+    .eco-logo { min-width:66px; height:66px; display:flex; align-items:center; justify-content:center;
+        border:2px solid #20a75b; border-radius:18px; background:#06140c; font-size:31px; }
+    .eco-hero-title { font-size:clamp(28px, 6vw, 42px); line-height:1.05; font-weight:850; color:#ffffff; }
+    .eco-hero-title span { color:#43df7b; }
+    .eco-hero-subtitle { margin-top:9px; font-size:11px; letter-spacing:1px; color:#d7e7dc; }
+    .eco-banner { background:linear-gradient(135deg,#071b10,#10251a) !important; border:1px solid #1b633b !important; }
+    .eco-banner h2 { color:#55e78a !important; }
+    .eco-how { border-left-color:#25b963 !important; }
+    .eco-muted { color:#c8d5cc !important; font-size:12px; }
+    @media (max-width: 520px) {
+        .block-container { padding-left:0.8rem; padding-right:0.8rem; }
+        .eco-hero { gap:10px; padding-top:10px; }
+        .eco-logo { min-width:54px; height:54px; font-size:25px; border-radius:15px; }
+        .eco-hero-subtitle { font-size:9px; letter-spacing:.5px; }
+        div.stButton > button, div.stFormSubmitButton > button { min-height:72px; font-size:14px; }
+    }
+
     hr { border-color: #555555 !important; }
     footer { visibility: hidden; }
     </style>
@@ -255,7 +275,7 @@ st.markdown(
 # =========================================================
 # 7. NAVIGATION
 # =========================================================
-nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Admin Dashboard"]
+nav_options = ["Home", "Report Plastic Waste", "Pune Waste Map", "Community Photos", "Admin Dashboard"]
 if st.session_state.get("eco_page") not in nav_options:
     st.session_state["eco_page"] = "Home"
 
@@ -276,41 +296,153 @@ if selected_page != "Home":
 if selected_page == "Home":
     st.markdown(
         """
-        <div class="eco-card">
-            <h2>Cleaner public places start with us.</h2>
-            <p>Report plastic waste with a photo and your current GPS location, view reports on the map, or manage submissions as an administrator.</p>
+        <div class="eco-hero">
+            <div class="eco-logo">🌿📍</div>
+            <div><div class="eco-hero-title">EcoWatch <span>Pune</span></div>
+            <div class="eco-hero-subtitle">CLEANER PLACES&nbsp; | &nbsp;GREENER TOMORROW</div></div>
+        </div>
+        <div class="eco-card eco-banner">
+            <h2>Small actions make a big difference.</h2>
+            <p>Help keep Pune clean. Report plastic waste, explore community reports, and see where action is needed.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown("## Choose an option")
-    st.caption("Tap one button to continue.")
+    st.markdown("### What would you like to do?")
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        if st.button("📸\nREPORT WASTE", key="home_report", type="primary", use_container_width=True):
+            st.session_state["eco_page"] = "Report Plastic Waste"
+            st.rerun()
+    with c2:
+        if st.button("🗺️\nLIVE WASTE MAP", key="home_map", use_container_width=True):
+            st.session_state["eco_page"] = "Pune Waste Map"
+            st.rerun()
+    c3, c4 = st.columns(2, gap="medium")
+    with c3:
+        if st.button("🖼️\nCOMMUNITY PHOTOS", key="home_photos", use_container_width=True):
+            st.session_state["eco_page"] = "Community Photos"
+            st.rerun()
+    with c4:
+        if st.button("🔐\nADMIN DASHBOARD", key="home_admin", use_container_width=True):
+            st.session_state["eco_page"] = "Admin Dashboard"
+            st.rerun()
 
-    if st.button("📍   REPORT PLASTIC WASTE", key="home_report", type="primary", use_container_width=True):
-        st.session_state["eco_page"] = "Report Plastic Waste"
-        st.rerun()
-
-    if st.button("🗺️   PUNE WASTE MAP", key="home_map", use_container_width=True):
-        st.session_state["eco_page"] = "Pune Waste Map"
-        st.rerun()
-
-    if st.button("🔐   ADMIN DASHBOARD", key="home_admin", use_container_width=True):
-        st.session_state["eco_page"] = "Admin Dashboard"
-        st.rerun()
+    try:
+        home_reports = get_reports()
+        total_reports = len(home_reports)
+        pending_reports = sum(1 for r in home_reports if str(r.get("status") or "Pending").lower() == "pending")
+        photo_reports = sum(1 for r in home_reports if r.get("photo_path"))
+        st.markdown("### EcoWatch at a glance")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Reports", total_reports)
+        m2.metric("Pending", pending_reports)
+        m3.metric("Photos", photo_reports)
+    except Exception:
+        st.info("Report statistics will appear when the database is reachable.")
 
     st.markdown(
         """
-        <div class="eco-card">
-            <b>How it works</b><br><br>
-            1. Detect your current location.<br>
-            2. Upload a photo and submit a report.<br>
-            3. View saved report locations on the map.
-        </div>
+        <div class="eco-card eco-how"><h3>🌱 Take action for a cleaner Pune</h3>
+        <p>1. Allow GPS access. &nbsp; 2. Upload a clear photo. &nbsp; 3. Submit your report.</p>
+        <p class="eco-muted">Photos submitted to EcoWatch may be visible to other visitors in Community Photos.</p></div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption("EcoWatch Pune • Plastic Free Public Places Campaign • AY 2026–27")
+    st.caption("EcoWatch Pune • Plastic Free Public Places Campaign • AI & ML Department • AY 2026–27")
+
+
+# =========================================================
+# 9A. COMMUNITY PHOTO GALLERY
+# =========================================================
+elif selected_page == "Community Photos":
+    st.header("🖼️ Community Photos")
+    st.write("Photos shared through EcoWatch Pune reports. Newest reports appear first.")
+    st.caption("Please upload only photos you are comfortable sharing publicly. Avoid faces, vehicle number plates, and private information.")
+    try:
+        photo_reports = [r for r in get_reports() if r.get("photo_path")]
+        if not photo_reports:
+            st.info("No community photos have been uploaded yet.")
+        else:
+            filter_options = ["All categories"] + sorted({str(r.get("waste_category") or "Other") for r in photo_reports})
+            chosen_category = st.selectbox("Filter by waste type", filter_options, key="eco_gallery_filter")
+            if chosen_category != "All categories":
+                photo_reports = [r for r in photo_reports if str(r.get("waste_category") or "Other") == chosen_category]
+            st.markdown(f"**{len(photo_reports)} photo report(s)**")
+            for start in range(0, len(photo_reports), 2):
+                cols = st.columns(2, gap="medium")
+                for col, report in zip(cols, photo_reports[start:start + 2]):
+                    with col:
+                        try:
+                            signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(report["photo_path"], 3600)
+                            image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
+                            if image_url and image_url.startswith("/"):
+                                image_url = supabase_url + "/storage/v1" + image_url
+                            if not image_url:
+                                st.warning("This photo link could not be created.")
+                                continue
+                            st.image(image_url, use_container_width=True)
+                            st.markdown(f"**{escape(str(report.get('waste_category') or 'Plastic Waste'))}**")
+                            st.caption(f"Status: {escape(str(report.get('status') or 'Pending'))}")
+                            description_text = str(report.get("description") or "").strip()
+                            if description_text:
+                                st.write(description_text[:220])
+                            created = str(report.get("created_at") or "")
+                            if created:
+                                st.caption(f"Reported: {created[:10]}")
+                        except Exception as photo_exc:
+                            st.warning("Could not load one of the uploaded photos.")
+                            st.caption(f"Photo detail: {photo_exc}")
+    except Exception as exc:
+        st.error("Community photos could not be loaded.")
+        st.caption(f"Technical detail: {exc}")
+
+
+# =========================================================
+# 9. REPORT FORM (GPS ONLY; NO MANUAL AREA FIELD)
+# =========================================================
+elif selected_page == "Community Photos":
+    st.header("🖼️ Community Photos")
+    st.write("Photos shared through EcoWatch Pune reports. Newest reports appear first.")
+    st.caption("Please upload only photos you are comfortable sharing publicly. Avoid faces, vehicle number plates, and private information.")
+    try:
+        photo_reports = [r for r in get_reports() if r.get("photo_path")]
+        if not photo_reports:
+            st.info("No community photos have been uploaded yet.")
+        else:
+            filter_options = ["All categories"] + sorted({str(r.get("waste_category") or "Other") for r in photo_reports})
+            chosen_category = st.selectbox("Filter by waste type", filter_options, key="eco_gallery_filter")
+            if chosen_category != "All categories":
+                photo_reports = [r for r in photo_reports if str(r.get("waste_category") or "Other") == chosen_category]
+            st.markdown(f"**{len(photo_reports)} photo report(s)**")
+            for start in range(0, len(photo_reports), 2):
+                cols = st.columns(2, gap="medium")
+                for col, report in zip(cols, photo_reports[start:start + 2]):
+                    with col:
+                        try:
+                            signed_result = supabase.storage.from_("ecowatch-photos").create_signed_url(report["photo_path"], 3600)
+                            image_url = signed_result.get("signedURL") or signed_result.get("signedUrl") or signed_result.get("signed_url")
+                            if image_url and image_url.startswith("/"):
+                                image_url = supabase_url + "/storage/v1" + image_url
+                            if not image_url:
+                                st.warning("This photo link could not be created.")
+                                continue
+                            st.image(image_url, use_container_width=True)
+                            st.markdown(f"**{escape(str(report.get('waste_category') or 'Plastic Waste'))}**")
+                            st.caption(f"Status: {escape(str(report.get('status') or 'Pending'))}")
+                            description_text = str(report.get("description") or "").strip()
+                            if description_text:
+                                st.write(description_text[:220])
+                            created = str(report.get("created_at") or "")
+                            if created:
+                                st.caption(f"Reported: {created[:10]}")
+                        except Exception as photo_exc:
+                            st.warning("Could not load one of the uploaded photos.")
+                            st.caption(f"Photo detail: {photo_exc}")
+    except Exception as exc:
+        st.error("Community photos could not be loaded.")
+        st.caption(f"Technical detail: {exc}")
 
 
 # =========================================================
@@ -626,4 +758,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-                )
+        )
+                                    
