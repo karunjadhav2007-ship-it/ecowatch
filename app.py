@@ -485,19 +485,43 @@ elif selected_page == "Report Plastic Waste":
 
     st.divider()
     st.subheader("📸 Take a photo of the waste")
-    st.write("Allow camera access when Chrome asks. Use the selector to choose the front or rear camera, then capture a still image.")
+    st.write("Allow camera access when Chrome asks. Choose Front Camera for selfies or Back Camera for the rear camera.")
 
-    # Camera selection is explicit instead of relying on st.camera_input's
-    # mobile-only facing-mode control. This also works when Chrome requests
-    # the desktop version of the site, provided the browser exposes both cameras.
-    camera_choice = st.radio(
-        "Select camera",
-        ["Rear camera", "Front camera"],
-        horizontal=True,
-        key="eco_camera_choice",
-        help="If a selected camera is unavailable, try the other option or turn off Chrome's Desktop site setting.",
-    )
+    # Simple explicit front/rear buttons. A different WebRTC key restarts the
+    # camera component after the selection changes.
+    if "eco_camera_choice" not in st.session_state:
+        st.session_state["eco_camera_choice"] = "Rear camera"
+
+    front_col, back_col = st.columns(2)
+    with front_col:
+        if st.button(
+            "🤳 Front Camera",
+            key="eco_front_camera_button",
+            use_container_width=True,
+            type="primary" if st.session_state["eco_camera_choice"] == "Front camera" else "secondary",
+        ):
+            if st.session_state["eco_camera_choice"] != "Front camera":
+                st.session_state["eco_camera_choice"] = "Front camera"
+                st.session_state.pop("eco_captured_photo_bytes", None)
+                st.session_state.pop("eco_captured_photo_preview", None)
+                st.rerun()
+
+    with back_col:
+        if st.button(
+            "📸 Back Camera",
+            key="eco_back_camera_button",
+            use_container_width=True,
+            type="primary" if st.session_state["eco_camera_choice"] == "Rear camera" else "secondary",
+        ):
+            if st.session_state["eco_camera_choice"] != "Rear camera":
+                st.session_state["eco_camera_choice"] = "Rear camera"
+                st.session_state.pop("eco_captured_photo_bytes", None)
+                st.session_state.pop("eco_captured_photo_preview", None)
+                st.rerun()
+
+    camera_choice = st.session_state["eco_camera_choice"]
     facing_mode = "environment" if camera_choice == "Rear camera" else "user"
+    st.caption(f"Selected camera: {camera_choice}")
     previous_facing_mode = st.session_state.get("eco_previous_facing_mode")
     if previous_facing_mode is not None and previous_facing_mode != facing_mode:
         st.session_state.pop("eco_captured_photo_bytes", None)
@@ -882,5 +906,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-                )
-                            
+)
