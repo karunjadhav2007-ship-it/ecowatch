@@ -10,7 +10,6 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
-from aiortc import RTCConfiguration
 from folium.plugins import Fullscreen
 from streamlit_folium import st_folium
 from streamlit_geolocation import streamlit_geolocation
@@ -544,9 +543,11 @@ elif selected_page == "Report Plastic Waste":
         },
         # STUN helps WebRTC negotiate a connection when hosted in the cloud.
         # Some networks still require TURN; STUN cannot bypass restrictive networks.
-        rtc_configuration=RTCConfiguration(
-            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-        ),
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]}
+            ]
+        },
         async_processing=True,
     )
 
@@ -914,5 +915,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-                )
-                                
+                    )
+                    
