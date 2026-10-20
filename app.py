@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
+from aiortc import RTCConfiguration
 from folium.plugins import Fullscreen
 from streamlit_folium import st_folium
 from streamlit_geolocation import streamlit_geolocation
@@ -534,11 +535,18 @@ elif selected_page == "Report Plastic Waste":
         media_stream_constraints={
             "video": {
                 "facingMode": {"ideal": facing_mode},
-                "width": {"ideal": 1280},
-                "height": {"ideal": 720},
+                # A lighter stream is more reliable on mobile data and phones.
+                "width": {"ideal": 640},
+                "height": {"ideal": 480},
+                "frameRate": {"ideal": 15, "max": 20},
             },
             "audio": False,
         },
+        # STUN helps WebRTC negotiate a connection when hosted in the cloud.
+        # Some networks still require TURN; STUN cannot bypass restrictive networks.
+        rtc_configuration=RTCConfiguration(
+            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+        ),
         async_processing=True,
     )
 
@@ -560,13 +568,13 @@ elif selected_page == "Report Plastic Waste":
     if clear_clicked:
         st.session_state.pop("eco_captured_photo_bytes", None)
         st.session_state.pop("eco_captured_photo_preview", None)
-        st.info("Captured photo cleared. Start the camera and capture a new photo.")
+        st.info("Captured photo cleared. Start the camera preview, then capture a new photo.")
 
     if capture_clicked:
         processor = getattr(camera_ctx, "video_processor", None)
         captured_image = processor.get_latest_image() if processor is not None else None
         if captured_image is None:
-            st.warning("Camera is not ready yet. Start the camera, wait for the live preview, then tap Capture Photo.")
+            st.warning("Camera is not ready yet. Tap START in the camera panel, allow camera access, wait for the live preview, then tap Capture Photo.")
         else:
             image_buffer = io.BytesIO()
             captured_image.convert("RGB").save(image_buffer, format="JPEG", quality=90, optimize=True)
@@ -580,7 +588,7 @@ elif selected_page == "Report Plastic Waste":
         st.image(captured_photo_bytes, caption="Captured waste photo — private until submitted", use_container_width=True)
         uploaded_file = CapturedPhoto(captured_photo_bytes)
     else:
-        st.info("No photo captured yet. Start the camera and tap Capture Photo.")
+        st.info("No photo captured yet. Tap START in the camera panel, wait for the live preview, then tap Capture Photo.")
 
     st.caption("Your captured photo is sent to the existing private EcoWatch photo storage only after you submit the report.")
 
@@ -906,4 +914,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)
+                )
+                                
