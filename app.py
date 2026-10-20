@@ -1,3 +1,5 @@
+import io
+import threading
 import uuid
 from datetime import datetime, timezone
 from html import escape
@@ -6,6 +8,8 @@ from urllib.parse import urlparse
 import folium
 import pandas as pd
 import streamlit as st
+from PIL import Image
+from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 from folium.plugins import Fullscreen
 from streamlit_folium import st_folium
 from streamlit_geolocation import streamlit_geolocation
@@ -235,6 +239,33 @@ def upload_photo(uploaded_file):
     return photo_path
 
 
+class EcoCameraProcessor(VideoProcessorBase):
+    """Keep the latest browser-camera frame so the user can capture it."""
+
+    def __init__(self):
+        self._frame_lock = threading.Lock()
+        self._latest_image = None
+
+    def recv(self, frame):
+        image = frame.to_image()
+        with self._frame_lock:
+            self._latest_image = image.copy()
+        return frame
+
+    def get_latest_image(self):
+        with self._frame_lock:
+            return self._latest_image.copy() if self._latest_image is not None else None
+
+
+class CapturedPhoto(io.BytesIO):
+    """BytesIO wrapper with the file attributes expected by save_report()."""
+
+    def __init__(self, photo_bytes):
+        super().__init__(photo_bytes)
+        self.name = "ecowatch-waste-photo.jpg"
+        self.type = "image/jpeg"
+
+
 def save_report(latitude, longitude, category, description, uploaded_file):
     latitude = float(latitude)
     longitude = float(longitude)
@@ -323,6 +354,7 @@ if selected_page != "Home":
     if st.button("🏠  BACK TO HOME", key="eco_back_home", use_container_width=True):
         navigate_to("Home")
     st.divider()
+
 
 # =========================================================
 # 8. HOME PAGE
@@ -452,8 +484,83 @@ elif selected_page == "Report Plastic Waste":
         st.warning("GPS location has not been detected. Allow location permission and use the location control above. Reports cannot be submitted without valid GPS coordinates.")
 
     st.divider()
+    st.subheader("📸 Take a photo of the waste")
+    st.write("Allow camera access when Chrome asks. Use the selector to choose the front or rear camera, then capture a still image.")
+
+    # Camera selection is explicit instead of relying on st.camera_input's
+    # mobile-only facing-mode control. This also works when Chrome requests
+    # the desktop version of the site, provided the browser exposes both cameras.
+    camera_choice = st.radio(
+        "Select camera",
+        ["Rear camera", "Front camera"],
+        horizontal=True,
+        key="eco_camera_choice",
+        help="If a selected camera is unavailable, try the other option or turn off Chrome's Desktop site setting.",
+    )
+    facing_mode = "environment" if camera_choice == "Rear camera" else "user"
+    previous_facing_mode = st.session_state.get("eco_previous_facing_mode")
+    if previous_facing_mode is not None and previous_facing_mode != facing_mode:
+        st.session_state.pop("eco_captured_photo_bytes", None)
+        st.session_state.pop("eco_captured_photo_preview", None)
+    st.session_state["eco_previous_facing_mode"] = facing_mode
+
+    camera_ctx = webrtc_streamer(
+        key=f"eco_waste_camera_{facing_mode}",
+        video_processor_factory=EcoCameraProcessor,
+        media_stream_constraints={
+            "video": {
+                "facingMode": {"ideal": facing_mode},
+                "width": {"ideal": 1280},
+                "height": {"ideal": 720},
+            },
+            "audio": False,
+        },
+        async_processing=True,
+    )
+
+    capture_col, clear_col = st.columns(2)
+    with capture_col:
+        capture_clicked = st.button(
+            "📷 Capture Photo",
+            type="primary",
+            use_container_width=True,
+            key="eco_capture_waste_photo",
+        )
+    with clear_col:
+        clear_clicked = st.button(
+            "🗑️ Retake / Clear",
+            use_container_width=True,
+            key="eco_clear_waste_photo",
+        )
+
+    if clear_clicked:
+        st.session_state.pop("eco_captured_photo_bytes", None)
+        st.session_state.pop("eco_captured_photo_preview", None)
+        st.info("Captured photo cleared. Start the camera and capture a new photo.")
+
+    if capture_clicked:
+        processor = getattr(camera_ctx, "video_processor", None)
+        captured_image = processor.get_latest_image() if processor is not None else None
+        if captured_image is None:
+            st.warning("Camera is not ready yet. Start the camera, wait for the live preview, then tap Capture Photo.")
+        else:
+            image_buffer = io.BytesIO()
+            captured_image.convert("RGB").save(image_buffer, format="JPEG", quality=90, optimize=True)
+            st.session_state["eco_captured_photo_bytes"] = image_buffer.getvalue()
+            st.session_state["eco_captured_photo_preview"] = True
+            st.success("Photo captured. Review it below before submitting your report.")
+
+    uploaded_file = None
+    captured_photo_bytes = st.session_state.get("eco_captured_photo_bytes")
+    if captured_photo_bytes:
+        st.image(captured_photo_bytes, caption="Captured waste photo — private until submitted", use_container_width=True)
+        uploaded_file = CapturedPhoto(captured_photo_bytes)
+    else:
+        st.info("No photo captured yet. Start the camera and tap Capture Photo.")
+
+    st.caption("Your captured photo is sent to the existing private EcoWatch photo storage only after you submit the report.")
+
     with st.form("eco_report_form"):
-        st.subheader("📸 Take a photo of the waste")
         category = st.selectbox(
             "Type of plastic waste",
             ["Plastic Bottles", "Plastic Bags", "Food Wrappers", "Plastic Packaging", "Mixed Plastic Waste", "Other Plastic Waste"],
@@ -463,17 +570,13 @@ elif selected_page == "Report Plastic Waste":
             placeholder="Optional — add any useful details, or leave this blank.",
             max_chars=1000,
         )
-        uploaded_file = st.camera_input(
-            "Open camera and take a waste photo",
-            help="Your photo is stored privately and is not shown to public users.",
-        )
         submitted = st.form_submit_button("Submit Waste Report", type="primary", use_container_width=True)
 
     if submitted:
         if not st.session_state["gps_ready"]:
             st.error("Report not submitted. Detect your current GPS location first.")
         elif uploaded_file is None:
-            st.error("Please take a photograph using the camera before submitting.")
+            st.error("Please start the camera and capture a photograph before submitting.")
         else:
             try:
                 with st.spinner("Saving your report..."):
@@ -485,6 +588,8 @@ elif selected_page == "Report Plastic Waste":
                         uploaded_file=uploaded_file,
                     )
                 st.success("Your plastic waste report was submitted!")
+                st.session_state.pop("eco_captured_photo_bytes", None)
+                st.session_state.pop("eco_captured_photo_preview", None)
                 st.session_state["gps_ready"] = False
                 st.session_state["gps_latitude"] = None
                 st.session_state["gps_longitude"] = None
@@ -492,7 +597,9 @@ elif selected_page == "Report Plastic Waste":
             except Exception as exc:
                 st.error("The report could not be saved. Check your connection and try again.")
                 st.caption(f"Technical detail: {exc}")
-        # =========================================================
+
+
+# =========================================================
 # 10. PUNE WASTE MAP
 # =========================================================
 elif selected_page == "Pune Waste Map":
@@ -775,4 +882,5 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)
+                )
+                            
