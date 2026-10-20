@@ -6,3 +6,4 @@ streamlit-folium
 supabase
 streamlit-geolocation
 streamlit-webrtc
+Pillow
